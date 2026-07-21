@@ -10,6 +10,7 @@ const courseClassSessionRoutes = require("./routes/courseClassSessionRoutes");
 const registrationRoutes = require("./routes/registrationRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
 const app = express();
 
 app.use(cors());
@@ -22,6 +23,7 @@ app.use("/api/course-classes", courseClassRoutes);
 app.use("/api/course-class-sessions", courseClassSessionRoutes);
 app.use("/api/registrations", registrationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/users", userRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,

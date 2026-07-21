@@ -3,6 +3,16 @@ const db = require("../config/db");
 const UserModel = require("../models/userModel");
 const RegistrationModel = require("../models/registrationModel");
 
+// ============================
+// Email
+// NOTE:
+// Không require trong function.
+// NodeJS chỉ load module một lần.
+// ============================
+
+const EmailService = require("./emailService");
+const EmailLogModel = require("../models/emailLogModel");
+
 class RegistrationService {
   static async register(data) {
     // Lấy connection để sử dụng Transaction
@@ -28,6 +38,38 @@ class RegistrationService {
       if (!data.email || data.email.trim() === "") {
         throw new Error("Vui lòng nhập email.");
       }
+      // ============================
+      // Chuẩn hóa dữ liệu
+      // NOTE:
+      // Loại bỏ khoảng trắng.
+      // Email luôn lưu chữ thường.
+      // ============================
+
+      data.fullname = data.fullname.trim();
+
+      data.phone = data.phone.trim();
+
+      data.email = data.email.trim().toLowerCase();
+
+      // ============================
+      // Validate Email
+      // ============================
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailRegex.test(data.email)) {
+        throw new Error("Email không hợp lệ.");
+      }
+
+      // ============================
+      // Validate Phone
+      // ============================
+
+      const phoneRegex = /^(0|\+84)[0-9]{9,10}$/;
+
+      if (!phoneRegex.test(data.phone)) {
+        throw new Error("Số điện thoại không hợp lệ.");
+      }
 
       // Bắt đầu Transaction
       await connection.beginTransaction();
@@ -38,10 +80,10 @@ class RegistrationService {
 
       const [classes] = await connection.query(
         `
-                SELECT *
-                FROM course_classes
-                WHERE id = ?
-                `,
+                  SELECT *
+                  FROM course_classes
+                  WHERE id = ?
+                  `,
         [data.class_id],
       );
 
@@ -153,13 +195,13 @@ class RegistrationService {
 
       await connection.query(
         `
-                UPDATE course_classes
+                  UPDATE course_classes
 
-                SET current_students =
-                    current_students + 1
+                  SET current_students =
+                      current_students + 1
 
-                WHERE id=?
-                `,
+                  WHERE id=?
+                  `,
 
         [data.class_id],
       );
@@ -170,16 +212,16 @@ class RegistrationService {
 
       const [[updatedClass]] = await connection.query(
         `
-                    SELECT
+                      SELECT
 
-                    current_students,
+                      current_students,
 
-                    max_students
+                      max_students
 
-                    FROM course_classes
+                      FROM course_classes
 
-                    WHERE id=?
-                    `,
+                      WHERE id=?
+                      `,
 
         [data.class_id],
       );
@@ -189,12 +231,12 @@ class RegistrationService {
       if (updatedClass.current_students >= updatedClass.max_students) {
         await connection.query(
           `
-                    UPDATE course_classes
+                      UPDATE course_classes
 
-                    SET status='FULL'
+                      SET status='FULL'
 
-                    WHERE id=?
-                    `,
+                      WHERE id=?
+                      `,
 
           [data.class_id],
         );
@@ -207,30 +249,30 @@ class RegistrationService {
       // ============================
 
       await connection.commit();
-      const EmailService = require("./emailService");
-      const EmailLogModel = require("../models/emailLogModel");
 
-      const emailResult = await EmailService.sendRegisterMail(
-        data.email,
+      try {
+        const emailResult = await EmailService.sendRegisterMail(
+          data.email,
+          data.fullname,
+          courseClass.class_name,
+        );
 
-        data.fullname,
+        await EmailLogModel.create({
+          registration_id: registrationId,
 
-        courseClass.class_name,
-      );
+          receiver_email: data.email,
 
-      await EmailLogModel.create({
-        registration_id: registrationId,
+          email_type: "REGISTER_SUCCESS",
 
-        receiver_email: data.email,
+          subject: emailResult.subject,
 
-        email_type: "REGISTER_SUCCESS",
+          content: emailResult.html,
 
-        subject: emailResult.subject,
-
-        content: emailResult.html,
-
-        status: "SUCCESS",
-      });
+          status: "SUCCESS",
+        });
+      } catch (err) {
+        console.error("Send mail error:", err);
+      }
       // ============================
       // 12. Sau này gửi Email
       // ============================
@@ -247,7 +289,16 @@ class RegistrationService {
         classStatus,
       };
     } catch (error) {
-      // Có lỗi thì rollback
+      // ============================
+      // Rollback Transaction
+      //
+      // NOTE:
+      //
+      // Nếu đang có Transaction
+      // thì rollback.
+      //
+      // Sau đó ném lỗi về Controller.
+      // ============================
 
       await connection.rollback();
 
@@ -257,6 +308,252 @@ class RegistrationService {
 
       connection.release();
     }
+  }
+  // ============================
+  // Xác nhận đăng ký
+  // ============================
+
+  static async confirm(id) {
+    const connection = await db.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      const registration = await RegistrationModel.findById(connection, id);
+
+      if (!registration) {
+        throw new Error("Không tìm thấy hồ sơ.");
+      }
+
+      if (registration.register_status === "CONFIRMED") {
+        throw new Error("Học viên đã được xác nhận.");
+      }
+
+      if (registration.register_status === "CANCELLED") {
+        throw new Error("Đăng ký đã bị hủy.");
+      }
+
+      if (registration.register_status === "REJECTED") {
+        throw new Error("Không thể xác nhận hồ sơ đã bị từ chối.");
+      }
+
+      await RegistrationModel.confirm(connection, id);
+
+      await connection.commit();
+
+      return true;
+    } catch (error) {
+      await connection.rollback();
+
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  // ============================
+  // Từ chối đăng ký
+  // ============================
+
+  static async reject(id, note) {
+    const connection = await db.getConnection();
+
+    try {
+      // ============================
+      // Transaction
+      // ============================
+
+      await connection.beginTransaction();
+
+      const registration = await RegistrationModel.findById(connection, id);
+
+      if (!registration) {
+        throw new Error("Không tìm thấy hồ sơ.");
+      }
+
+      if (registration.register_status === "REJECTED") {
+        throw new Error("Hồ sơ đã bị từ chối.");
+      }
+
+      if (registration.register_status === "CANCELLED") {
+        throw new Error("Đăng ký đã bị hủy.");
+      }
+
+      if (registration.register_status === "CONFIRMED") {
+        throw new Error("Không thể từ chối hồ sơ đã xác nhận.");
+      }
+
+      // ============================
+      // Cập nhật trạng thái
+      // ============================
+
+      await RegistrationModel.reject(connection, id, note);
+
+      // ============================
+      // Giảm số lượng học viên
+      // Vì khi đăng ký đã tăng +1
+      // ============================
+
+      await connection.query(
+        `
+        UPDATE course_classes
+        SET current_students = current_students - 1
+        WHERE id = ?
+        `,
+        [registration.class_id],
+      );
+
+      // ============================
+      // Nếu lớp đang FULL thì mở lại
+      // ============================
+
+      const [[courseClass]] = await connection.query(
+        `
+        SELECT
+            current_students,
+            max_students,
+            status
+        FROM course_classes
+        WHERE id = ?
+        `,
+        [registration.class_id],
+      );
+
+      if (
+        courseClass.status === "FULL" &&
+        courseClass.current_students < courseClass.max_students
+      ) {
+        await connection.query(
+          `
+          UPDATE course_classes
+          SET status='OPEN'
+          WHERE id=?
+          `,
+          [registration.class_id],
+        );
+      }
+
+      // ============================
+      // Commit
+      // ============================
+
+      await connection.commit();
+
+      return true;
+    } catch (error) {
+      await connection.rollback();
+
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  // ============================
+  // ============================
+  // Hủy đăng ký
+  // ============================
+
+  static async cancel(id, note) {
+    const connection = await db.getConnection();
+
+    try {
+      // ============================
+      // Transaction
+      // ============================
+
+      await connection.beginTransaction();
+
+      const registration = await RegistrationModel.findById(connection, id);
+
+      if (!registration) {
+        throw new Error("Không tìm thấy hồ sơ.");
+      }
+
+      if (registration.register_status === "CANCELLED") {
+        throw new Error("Đăng ký đã được hủy.");
+      }
+
+      // ============================
+      // Hủy đăng ký
+      // ============================
+
+      await RegistrationModel.cancel(connection, id, note);
+
+      // ============================
+      // Giảm số lượng học viên
+      // ============================
+
+      await connection.query(
+        `
+        UPDATE course_classes
+        SET current_students = current_students - 1
+        WHERE id = ?
+        `,
+        [registration.class_id],
+      );
+
+      // ============================
+      // Nếu lớp FULL thì mở lại
+      // ============================
+
+      const [[courseClass]] = await connection.query(
+        `
+        SELECT
+            current_students,
+            max_students,
+            status
+        FROM course_classes
+        WHERE id = ?
+        `,
+        [registration.class_id],
+      );
+
+      if (
+        courseClass.status === "FULL" &&
+        courseClass.current_students < courseClass.max_students
+      ) {
+        await connection.query(
+          `
+          UPDATE course_classes
+          SET status='OPEN'
+          WHERE id=?
+          `,
+          [registration.class_id],
+        );
+      }
+
+      // ============================
+
+      await connection.commit();
+
+      return true;
+    } catch (error) {
+      await connection.rollback();
+
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  // ============================
+  // Checkin học viên
+  // ============================
+
+  static async checkin(id) {
+    const registration = await RegistrationModel.findById(id);
+
+    if (!registration) {
+      throw new Error("Không tìm thấy hồ sơ.");
+    }
+
+    if (registration.register_status !== "CONFIRMED") {
+      throw new Error("Chỉ học viên đã xác nhận mới được checkin.");
+    }
+
+    if (registration.checked_in) {
+      throw new Error("Học viên đã checkin.");
+    }
+
+    await RegistrationModel.checkin(id);
   }
 }
 

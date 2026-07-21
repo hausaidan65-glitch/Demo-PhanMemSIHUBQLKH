@@ -2,15 +2,21 @@ const Model = require("../models/courseClassSessionModel");
 
 class CourseClassSessionController {
   static async index(req, res) {
-    const data = await Model.getAll();
+    try {
+      const data = await Model.getAll();
 
-    res.json({
-      success: true,
+      return res.json({
+        success: true,
+        total: data.length,
+        data,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
 
-      total: data.length,
-
-      data,
-    });
+        message: error.message,
+      });
+    }
   }
 
   static async byClass(req, res) {
