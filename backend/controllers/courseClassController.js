@@ -1,104 +1,181 @@
 const CourseClassModel = require("../models/courseClassModel");
-
+const CourseClassService = require("../services/courseClassService");
 class CourseClassController {
   static async index(req, res) {
     try {
       const data = await CourseClassModel.getAll();
 
-      res.json({
+      return res.json({
         success: true,
         total: data.length,
         data,
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
         success: false,
-        message: err.message,
+        message: "Không thể lấy danh sách lớp học.",
       });
     }
   }
 
   static async show(req, res) {
     try {
-      const data = await CourseClassModel.getById(req.params.id);
+      const id = Number(req.params.id);
 
-      res.json({
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "ID lớp học không hợp lệ.",
+        });
+      }
+
+      const data = await CourseClassModel.getById(id);
+
+      if (!data) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy lớp học.",
+        });
+      }
+
+      return res.json({
         success: true,
         data,
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
         success: false,
-        message: err.message,
+        message: "Không thể lấy chi tiết lớp học.",
       });
     }
   }
 
   static async getByCourse(req, res) {
     try {
-      const data = await CourseClassModel.getByCourse(req.params.courseId);
+      const courseId = Number(req.params.courseId);
 
-      res.json({
+      if (!Number.isInteger(courseId) || courseId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Khóa học không hợp lệ.",
+        });
+      }
+
+      const data = await CourseClassModel.getByCourse(courseId);
+
+      return res.json({
         success: true,
         total: data.length,
         data,
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
         success: false,
-        message: err.message,
+        message: "Không thể lấy danh sách lớp.",
       });
     }
   }
 
   static async store(req, res) {
     try {
-      const result = await CourseClassModel.create(req.body);
+      const result = await CourseClassService.createFullClass(req.body);
 
-      res.json({
+      return res.status(201).json({
         success: true,
-        id: result.insertId,
+        message: "Tạo lớp học thành công.",
+        data: result,
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error("Lỗi tạo lớp học:", error);
+
+      const businessMessages = [
+        "Vui lòng",
+        "không tồn tại",
+        "đã tồn tại",
+        "bị trùng",
+        "phải lớn hơn",
+        "phải sau",
+      ];
+
+      const isBusinessError = businessMessages.some((text) =>
+        error.message.includes(text),
+      );
+
+      return res.status(isBusinessError ? 400 : 500).json({
         success: false,
-        message: err.message,
+        message: error.message || "Không thể tạo lớp học.",
       });
     }
   }
 
   static async update(req, res) {
     try {
-      await CourseClassModel.update(
+      const result = await CourseClassService.updateFullClass(
         req.params.id,
-
         req.body,
       );
 
-      res.json({
+      return res.json({
         success: true,
-        message: "Updated successfully",
+        message: "Cập nhật lớp học thành công.",
+        data: result,
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error("Lỗi cập nhật lớp học:", error);
+
+      const businessMessages = [
+        "Vui lòng",
+        "không hợp lệ",
+        "không tồn tại",
+        "Không tìm thấy",
+        "đã tồn tại",
+        "bị trùng",
+        "phải lớn hơn",
+        "phải sau",
+        "không được nhỏ hơn",
+      ];
+
+      const isBusinessError = businessMessages.some((text) =>
+        error.message.includes(text),
+      );
+
+      return res.status(isBusinessError ? 400 : 500).json({
         success: false,
-        message: err.message,
+        message: error.message || "Không thể cập nhật lớp học.",
       });
     }
   }
 
   static async destroy(req, res) {
     try {
-      await CourseClassModel.delete(req.params.id);
+      const id = Number(req.params.id);
 
-      res.json({
+      const data = await CourseClassModel.getById(id);
+
+      if (!data) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy lớp học.",
+        });
+      }
+      await CourseClassModel.delete(id, req.admin.id);
+
+      return res.json({
         success: true,
-        message: "Deleted successfully",
+        message: "Xóa lớp học thành công.",
       });
-    } catch (err) {
-      res.status(500).json({
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
         success: false,
-        message: err.message,
+        message: error.message,
       });
     }
   }

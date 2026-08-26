@@ -31,40 +31,37 @@ class CourseClassSessionModel {
     return rows;
   }
 
-  static async create(data) {
+  static async createWithConnection(connection, data) {
     const sql = `
+    INSERT INTO course_class_sessions(
+      class_id,
+      session_no,
+      session_date,
+      start_time,
+      end_time,
+      location,
+      room,
+      note
+    )
+    VALUES(?,?,?,?,?,?,?,?)
+  `;
 
-        INSERT INTO course_class_sessions(
-
-            class_id,
-            session_no,
-            session_date,
-            start_time,
-            end_time,
-            room,
-            note
-
-        )
-
-        VALUES(
-
-            ?,?,?,?,?,?,?
-
-        )
-
-        `;
-
-    const [result] = await db.query(sql, [
+    const [result] = await connection.query(sql, [
       data.class_id,
-      data.session_no,
-      data.session_date,
-      data.start_time,
-      data.end_time,
-      data.room,
-      data.note,
+      data.session_no || null,
+      data.session_date || null,
+      data.start_time || null,
+      data.end_time || null,
+      data.location || null,
+      data.room || null,
+      data.note || null,
     ]);
 
     return result;
+  }
+
+  static async create(data) {
+    return this.createWithConnection(db, data);
   }
 }
 

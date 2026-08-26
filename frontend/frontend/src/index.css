@@ -3,7 +3,9 @@
 * {
   box-sizing: border-box;
 }
-
+html {
+  scroll-behavior: smooth;
+}
 html,
 body,
 #root {
@@ -36,4 +38,17 @@ body {
 
 .input:focus {
   border-color: #16a34a;
+}
+.student-table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.student-table-scroll::-webkit-scrollbar-thumb {
+  background: #16a34a;
+  border-radius: 20px;
+}
+
+.student-table-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
 }

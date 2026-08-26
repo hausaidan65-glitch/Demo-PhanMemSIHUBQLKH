@@ -24,6 +24,20 @@ class AuthController {
       // ==========================
 
       const admin = await AdminModel.findByUsername(username);
+      console.log("LOGIN DEBUG:", {
+        username,
+        found: Boolean(admin),
+
+        admin: admin
+          ? {
+              id: admin.id,
+              username: admin.username,
+              role: admin.role,
+              status: admin.status,
+              passwordLength: admin.password?.length,
+            }
+          : null,
+      });
 
       if (!admin) {
         return res.status(401).json({
@@ -32,12 +46,18 @@ class AuthController {
         });
       }
 
+      if (admin.status !== "ACTIVE") {
+        return res.status(403).json({
+          success: false,
+          message: "Tài khoản quản trị đã bị khóa hoặc ngừng hoạt động.",
+        });
+      }
       // ==========================
       // Kiểm tra Password
       // ==========================
 
       const match = await bcrypt.compare(password, admin.password);
-
+      console.log("PASSWORD MATCH:", match);
       if (!match) {
         return res.status(401).json({
           success: false,
@@ -50,6 +70,7 @@ class AuthController {
       // ==========================
 
       await AdminModel.updateLastLogin(admin.id);
+      const scopes = await AdminModel.getScopes(admin.id);
 
       // ==========================
       // Sinh JWT
@@ -60,6 +81,7 @@ class AuthController {
           id: admin.id,
           username: admin.username,
           role: admin.role,
+          scopes,
         },
         process.env.JWT_SECRET,
         {
@@ -83,6 +105,7 @@ class AuthController {
           username: admin.username,
           email: admin.email,
           role: admin.role,
+          scopes,
           avatar: admin.avatar,
         },
       });

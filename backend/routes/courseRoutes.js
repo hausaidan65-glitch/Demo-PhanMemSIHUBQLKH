@@ -6,48 +6,53 @@ const CourseController = require("../controllers/courseController");
 
 const AuthMiddleware = require("../middleware/authMiddleware");
 const RoleMiddleware = require("../middleware/roleMiddleware");
+const ScopeMiddleware = require("../middleware/scopeMiddleware");
 
-// ============================
-// Public
-// ============================
+const uploadCourseImage = require("../middleware/uploadCourseImage");
 
-// Lấy tất cả khóa học
+const verifyToken = AuthMiddleware.verifyToken;
+
+const allowAdmin = RoleMiddleware.allow("SUPER_ADMIN", "ADMIN");
+
+const allowTraining = ScopeMiddleware.allow("TRAINING");
+
+// ===============================
+// PUBLIC
+// ===============================
+
 router.get("/", CourseController.index);
 
-// Lấy theo Activity
-router.get("/activity/:activityId", CourseController.byActivity);
+router.get("/program/:programId", CourseController.byProgram);
 
-// Lấy chi tiết khóa học
 router.get("/:id", CourseController.show);
 
-// ============================
-// Admin
-// ============================
-
-// Thêm khóa học
+// ===============================
+// ADMIN - TRAINING
+// ===============================
 
 router.post(
   "/",
-  AuthMiddleware.verifyToken,
-  RoleMiddleware.allow("SUPER_ADMIN", "TRAINING"),
+  verifyToken,
+  allowAdmin,
+  allowTraining,
+  uploadCourseImage.single("thumbnail"),
   CourseController.store,
 );
 
-// Cập nhật khóa học
-
 router.put(
   "/:id",
-  AuthMiddleware.verifyToken,
-  RoleMiddleware.allow("SUPER_ADMIN", "TRAINING"),
+  verifyToken,
+  allowAdmin,
+  allowTraining,
+  uploadCourseImage.single("thumbnail"),
   CourseController.update,
 );
 
-// Xóa khóa học
-
 router.delete(
   "/:id",
-  AuthMiddleware.verifyToken,
-  RoleMiddleware.allow("SUPER_ADMIN"),
+  verifyToken,
+  allowAdmin,
+  allowTraining,
   CourseController.destroy,
 );
 

@@ -15,6 +15,12 @@ class UserModel {
         u.email,
         u.phone,
 
+        u.company,
+        u.position,
+        u.user_type,
+        u.gender,
+        u.age_group,
+
         COUNT(DISTINCT r.id) total_courses,
 
         GROUP_CONCAT(
@@ -134,32 +140,116 @@ class UserModel {
       default:
         sql += " ORDER BY latest_register DESC";
     }
-
-    const [rows] = await db.query(sql, params);
-
-    return rows;
-
     // ============================
     // Pagination
     // ============================
 
-    const page = Number(query.page) || 1;
+    const page = Math.max(Number(query.page) || 1, 1);
 
-    const limit = Number(query.limit) || 10;
+    const requestedLimit = Number(query.limit) || 10;
 
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
     const offset = (page - 1) * limit;
 
     sql += `
 
-        LIMIT ?
+LIMIT ?
 
-        OFFSET ?
+OFFSET ?
 
-        `;
+`;
 
-    params.push(limit);
+    params.push(limit, offset);
 
-    params.push(offset);
+    // ============================
+    // Thực thi Query
+    // ============================
+
+    const [rows] = await db.query(sql, params);
+
+    return rows;
+  }
+  // ============================
+  // Đếm tổng học viên sau khi lọc
+  // ============================
+
+  static async countAll(query = {}) {
+    let sql = `
+    SELECT COUNT(DISTINCT u.id) AS total
+
+    FROM users u
+
+    LEFT JOIN registrations r
+      ON u.id = r.user_id
+
+    LEFT JOIN course_classes cc
+      ON r.class_id = cc.id
+
+    LEFT JOIN courses c
+      ON cc.course_id = c.id
+
+    WHERE 1 = 1
+  `;
+
+    const params = [];
+
+    // ============================
+    // Tìm kiếm
+    // ============================
+
+    if (query.keyword) {
+      sql += `
+      AND (
+        u.fullname LIKE ?
+        OR u.email LIKE ?
+        OR u.phone LIKE ?
+      )
+    `;
+
+      const keyword = `%${String(query.keyword).trim()}%`;
+
+      params.push(keyword, keyword, keyword);
+    }
+
+    // ============================
+    // Khóa học
+    // ============================
+
+    if (query.course_id) {
+      sql += `
+      AND c.id = ?
+    `;
+
+      params.push(Number(query.course_id));
+    }
+
+    // ============================
+    // Lớp học
+    // ============================
+
+    if (query.class_id) {
+      sql += `
+      AND cc.id = ?
+    `;
+
+      params.push(Number(query.class_id));
+    }
+
+    // ============================
+    // Trạng thái đăng ký
+    // ============================
+
+    if (query.status) {
+      sql += `
+      AND r.register_status = ?
+    `;
+
+      params.push(query.status);
+    }
+
+    const [rows] = await db.query(sql, params);
+
+    return Number(rows[0]?.total || 0);
   }
   // ============================
   // Chi tiết học viên
@@ -314,21 +404,150 @@ class UserModel {
       cancelled: cancelled.total,
     };
   }
-  // ============================
-  // Tìm user bằng email
-  // ============================
 
+  // ============================
+  // Tìm học viên bằng email
+  // ============================
   static async findByEmail(email) {
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!normalizedEmail) {
+      return null;
+    }
+
     const [rows] = await db.query(
       `
-        SELECT *
-        FROM users
-        WHERE email=?
-        `,
-      [email],
+      SELECT
+        id,
+        fullname,
+        phone,
+        email,
+        gender,
+        age_group,
+        company,
+        position,
+        user_type
+      FROM users
+      WHERE LOWER(TRIM(email)) = ?
+      LIMIT 1
+    `,
+      [normalizedEmail],
     );
 
     return rows[0] || null;
+  }
+  // ============================
+  // Tìm học viên bằng số điện thoại
+  // ============================
+  static async findByPhone(phone) {
+    const normalizedPhone = String(phone || "").replace(/\D/g, "");
+
+    if (!normalizedPhone) {
+      return null;
+    }
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        fullname,
+        phone,
+        email,
+        gender,
+        age_group,
+        company,
+        position,
+        user_type
+      FROM users
+      WHERE
+        REPLACE(
+          REPLACE(
+            REPLACE(
+              REPLACE(phone, ' ', ''),
+              '.', ''
+            ),
+            '-', ''
+          ),
+          '+84', '0'
+        ) = ?
+      LIMIT 1
+    `,
+      [normalizedPhone],
+    );
+
+    return rows[0] || null;
+  }
+  // ============================
+  // Tìm học viên bằng ID
+  // ============================
+  static async findById(id) {
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        fullname,
+        phone,
+        email,
+        gender,
+        age_group,
+        company,
+        position,
+        user_type
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `,
+      [id],
+    );
+
+    return rows[0] || null;
+  }
+  // ============================
+  // Cập nhật email nhận thông báo chính
+  // ============================
+  static async updatePrimaryEmail(userId, email) {
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
+    const [result] = await db.query(
+      `
+      UPDATE users
+      SET email = ?
+      WHERE id = ?
+    `,
+      [normalizedEmail, userId],
+    );
+
+    return result.affectedRows > 0;
+  }
+  static async updateProfile(id, data) {
+    const [result] = await db.query(
+      `
+    UPDATE users
+    SET
+      fullname = ?,
+      gender = ?,
+      age_group = ?,
+      company = ?,
+      position = ?,
+      user_type = ?
+    WHERE id = ?
+    `,
+      [
+        String(data.fullname || "").trim(),
+        data.gender || "OTHER",
+        data.age_group || null,
+        data.company || null,
+        data.position || null,
+        data.user_type || "OTHER",
+        id,
+      ],
+    );
+
+    return result.affectedRows > 0;
   }
   // ============================
   // Tạo học viên
@@ -355,13 +574,15 @@ class UserModel {
     `,
 
       [
-        data.fullname,
-        data.phone,
-        data.email,
+        String(data.fullname || "").trim(),
+        String(data.phone || "").replace(/\D/g, ""),
+        String(data.email || "")
+          .trim()
+          .toLowerCase(),
         data.gender || "OTHER",
-        data.age_group,
-        data.company,
-        data.position,
+        data.age_group || null,
+        data.company || null,
+        data.position || null,
         data.user_type || "OTHER",
       ],
     );

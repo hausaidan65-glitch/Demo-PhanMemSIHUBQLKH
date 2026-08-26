@@ -1,326 +1,290 @@
-import { Outlet, Link } from "react-router-dom";
-
-import { ChevronDown, Leaf } from "lucide-react";
+import { Outlet, Link, NavLink } from "react-router-dom";
+import {
+  ChevronDown,
+  CircleUserRound,
+  Leaf,
+  LogIn,
+  Menu,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import logoSihub from "../assets/logo1.png";
+import logoSihubfooter from "../assets/logoadmin.png";
+import { useEffect, useState } from "react";
 
 export default function UserLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+
+    handleScroll();
+
+    window.addEventListener("scroll", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+  const adminToken = localStorage.getItem("admin_token");
+  const isAdminLoggedIn = Boolean(adminToken);
+
+  const adminPath = isAdminLoggedIn ? "/admin" : "/login";
+
+  const adminLabel = isAdminLoggedIn
+    ? "Vào trang quản trị"
+    : "Đăng nhập quản trị";
+
+  const menuClass = ({ isActive }) =>
+    `
+    transition
+    ${
+      isActive
+        ? "text-green-600 font-semibold"
+        : "text-slate-700 hover:text-green-600"
+    }
+    `;
+
   return (
-    <div
-      className="
-min-h-screen
-bg-gray-50
-"
-    >
-      {/* HEADER */}
+    <div className="min-h-screen bg-slate-50">
+      {/* ================= HEADER ================= */}
 
-      <header
-        className="
-bg-white
-shadow-sm
-sticky
-top:0
-z-50
-"
-      >
-        <div
-          className="
-max-w-7xl
-mx-auto
-px-6
-h-20
-flex
-items-center
-justify-between
-"
-        >
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-[90px] max-w-7xl items-center justify-between px-6">
           {/* LOGO */}
-
-          <Link
-            to="/"
-            className="
-flex
-items-center
-gap-3
-"
-          >
-            <div
-              className="
-w-12
-h-12
-rounded-full
-bg-green-600
-flex
-items-center
-justify-center
-text-white
-"
-            >
-              <Leaf />
-            </div>
-
-            <div>
-              <h1
-                className="
-font-bold
-text-2xl
-text-green-700
-"
-              >
-                SIHUB
-              </h1>
-
-              <p
-                className="
-text-xs
-text-gray-500
-"
-              >
-                Innovation Hub
-              </p>
-            </div>
+          <Link to="/" className="flex shrink-0 items-center">
+            <img
+              src={logoSihub}
+              alt="SIHUB"
+              className="h-14 w-auto object-contain"
+            />
           </Link>
 
           {/* MENU */}
-
-          <nav
-            className="
-flex
-items-center
-gap-8
-text-gray-700
-"
-          >
-            <Link to="/" className="hover:text-green-600">
+          <nav className="hidden items-center gap-6 lg:flex">
+            <NavLink
+              to="/"
+              className={({ isActive }) =>
+                `text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
+            >
               Trang chủ
-            </Link>
+            </NavLink>
 
-            <Link to="/about" className="hover:text-green-600">
-              Về SIHUB
-            </Link>
-
-            <div
-              className="
-relative
-group
-"
-            >
-              <button
-                className="
-flex
-items-center
-gap-1
-hover:text-green-600
-"
-              >
-                Chương trình
-                <ChevronDown size={16} />
-              </button>
-
-              <div
-                className="
-absolute
-hidden
-group-hover:block
-bg-white
-shadow-xl
-rounded-xl
-p-4
-w-60
-"
-              >
-                <Link
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                  to="/courses"
-                >
-                  Khóa học
-                </Link>
-
-                <a
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                >
-                  Ươm tạo Startup
-                </a>
-
-                <a
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                >
-                  Cố vấn doanh nghiệp
-                </a>
-              </div>
-            </div>
-
-            <div
-              className="
-relative
-group
-"
-            >
-              <button
-                className="
-flex
-items-center
-gap-1
-hover:text-green-600
-"
-              >
-                Sự kiện
-                <ChevronDown size={16} />
-              </button>
-
-              <div
-                className="
-absolute
-hidden
-group-hover:block
-bg-white
-shadow-xl
-rounded-xl
-p-4
-w-60
-"
-              >
-                <Link
-                  to="/events"
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                >
-                  Hội thảo
-                </Link>
-
-                <Link
-                  to="/workshops"
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                >
-                  Workshop
-                </Link>
-
-                <a
-                  className="
-block
-py-2
-hover:text-green-600
-"
-                >
-                  Networking
-                </a>
-              </div>
-            </div>
-
-            <Link to="/news" className="hover:text-green-600">
-              Tin tức
-            </Link>
-
-            <Link
+            <NavLink
               to="/courses"
-              className="
-bg-green-600
-text-white
-px-5
-py-2
-rounded-full
-hover:bg-green-700
-"
+              className={({ isActive }) =>
+                `text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
             >
-              Đăng ký ngay
-            </Link>
+              Khóa huấn luyện
+            </NavLink>
+
+            <NavLink
+              to="/events"
+              className={({ isActive }) =>
+                `text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
+            >
+              Sự kiện
+            </NavLink>
+            <NavLink
+              to="/exhibitions"
+              className={({ isActive }) =>
+                `text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
+            >
+              Triển lãm
+            </NavLink>
+            <NavLink
+              to="/incubation-programs"
+              className={({ isActive }) =>
+                `whitespace-nowrap text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
+            >
+              Chương trình ươm tạo
+            </NavLink>
+
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `whitespace-nowrap text-[15px] font-medium transition ${
+                  isActive
+                    ? "font-semibold text-green-600"
+                    : "text-slate-600 hover:text-green-600"
+                }`
+              }
+            >
+              Về SIHUB
+            </NavLink>
           </nav>
+
+          {/* ADMIN BUTTON */}
+          <div className="flex shrink-0 items-center">
+            <Link
+              to="/admin"
+              className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-green-300 hover:text-green-600"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-green-600 text-white">
+                🛡
+              </span>
+              Quản trị
+            </Link>
+          </div>
         </div>
       </header>
 
-      {/* CONTENT */}
+      {/* ================= CONTENT ================= */}
 
       <main>
         <Outlet />
       </main>
 
-      {/* FOOTER */}
+      {/* ================= FOOTER ================= */}
 
       <footer
         className="
-bg-green-900
-text-white
-mt-20
-"
+        mt-20
+        bg-green-900
+        text-white
+        "
       >
         <div
           className="
-max-w-7xl
-mx-auto
-p-10
-grid
-md:grid-cols-3
-gap-8
-"
+          max-w-7xl
+          mx-auto
+          px-6
+          py-14 
+          grid
+          md:grid-cols-3
+          gap-10
+          "
         >
           <div>
-            <h2
+            <div
               className="
-text-2xl
-font-bold
-"
+              flex
+              items-center
+              gap-3
+              "
             >
-              SIHUB
-            </h2>
+              <Link
+                to="/"
+                className="
+  flex
+  items-center
+  "
+              >
+                <img
+                  src={logoSihubfooter}
+                  alt="SIHUB"
+                  className="
+    h-14
+    w-auto
+    object-contain
+    "
+                />
+              </Link>
+            </div>
 
             <p
               className="
-mt-3
-text-green-100
-"
+              mt-5
+              text-green-100
+              leading-7
+              "
             >
-              Kết nối đổi mới sáng tạo và cộng đồng Startup Việt Nam.
+              Kết nối đổi mới sáng tạo, đào tạo và phát triển cộng đồng Startup
+              Việt Nam.
             </p>
           </div>
 
           <div>
             <h3
               className="
-font-bold
-mb-3
-"
+              font-bold
+              text-lg
+              "
             >
-              Chương trình
+              Khám phá
             </h3>
 
-            <p>Khóa học</p>
+            <div
+              className="
+              mt-4
+              space-y-3
+              text-green-100
+              "
+            >
+              <p>Khóa huấn luyện</p>
 
-            <p>Workshop</p>
+              <p>Hội thảo</p>
+              <p>Sự kiện kết nối </p>
 
-            <p>Hội thảo</p>
+              <p>Triển lãm </p>
+              <p>Chương trình ươm tạo </p>
+            </div>
           </div>
 
           <div>
             <h3
               className="
-font-bold
-mb-3
-"
+              font-bold
+              text-lg
+              "
             >
               Liên hệ
             </h3>
 
-            <p>Sài Gòn Innovation Hub</p>
+            <div
+              className="
+              mt-4
+              space-y-3
+              text-green-100
+              "
+            >
+              <p>Saigon Innovation Hub</p>
 
-            <p>TP.HCM</p>
+              <p>TP. Hồ Chí Minh</p>
+
+              <p>Email: contact@sihub.vn</p>
+            </div>
           </div>
+        </div>
+
+        <div
+          className="
+          border-t
+          border-green-800
+          py-5
+          text-center
+          text-sm
+          text-green-200
+          "
+        >
+          © 2026 SIHUB. All rights reserved.
         </div>
       </footer>
     </div>

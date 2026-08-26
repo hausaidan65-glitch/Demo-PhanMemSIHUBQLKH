@@ -1,24 +1,68 @@
-import { BookOpen, School, Users, CalendarDays } from "lucide-react";
+import { BookOpen, GraduationCap, Users, ClipboardCheck } from "lucide-react";
 
 const icons = {
   "Khóa học": BookOpen,
-  "Lớp học": School,
+
+  "Lớp học": GraduationCap,
+
+  "Học viên đăng ký": Users,
+
   "Đăng ký": Users,
-  "Hôm nay": CalendarDays,
+
+  "Đăng ký hôm nay": ClipboardCheck,
+
+  "Hôm nay": ClipboardCheck,
 };
 
 const StatCard = ({ title, value, color }) => {
-  const Icon = icons[title];
+  const Icon = icons[title] || BookOpen;
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-5 flex justify-between items-center">
+    <div
+      className="
+            bg-white
+            rounded-3xl
+            border
+            border-slate-100
+            shadow-sm
+            p-6
+            flex
+            justify-between
+            items-center
+            hover:shadow-lg
+            transition
+            "
+    >
       <div>
-        <p className="text-gray-500 text-sm">{title}</p>
+        <p
+          className="
+                    text-slate-500
+                    text-sm
+                    "
+        >
+          {title}
+        </p>
 
-        <h2 className="text-3xl font-bold mt-2">{value}</h2>
+        <h2
+          className="
+                    text-4xl
+                    font-bold
+                    mt-3
+                    text-slate-900
+                    "
+        >
+          {value}
+        </h2>
       </div>
 
-      <div className={`${color} rounded-full p-4 text-white`}>
+      <div
+        className={`
+                ${color}
+                rounded-2xl
+                p-4
+                text-white
+                `}
+      >
         <Icon size={28} />
       </div>
     </div>

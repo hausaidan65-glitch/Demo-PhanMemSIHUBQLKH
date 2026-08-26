@@ -1,47 +1,44 @@
 const db = require("../config/db");
 
 class EmailLogModel {
+  // ============================
+  // Lưu lịch sử gửi email
+  // ============================
   static async create(data) {
     const sql = `
+      INSERT INTO email_logs(
 
-        INSERT INTO email_logs(
+        registration_id,
 
-            registration_id,
+        email,
 
-            receiver_email,
+        subject,
 
-            email_type,
+        content,
 
-            subject,
+        status,
 
-            content,
+        sent_at
 
-            status,
+      )
 
-            sent_at
+      VALUES(
 
-        )
+        ?,?,?,?,?,NOW()
 
-        VALUES(
-
-            ?,?,?,?,?,?,NOW()
-
-        )
-
-        `;
+      )
+    `;
 
     const [result] = await db.query(sql, [
       data.registration_id,
 
-      data.receiver_email,
-
-      data.email_type,
+      data.email,
 
       data.subject,
 
       data.content,
 
-      data.status,
+      data.status || "SUCCESS",
     ]);
 
     return result;
