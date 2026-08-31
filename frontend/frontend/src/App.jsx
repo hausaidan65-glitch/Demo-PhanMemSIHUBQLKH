@@ -22,6 +22,12 @@ import AdminIncubationPrograms from "./admin/AdminIncubationPrograms";
 import AdminIncubationProfiles from "./admin/AdminIncubationProfiles";
 import AdminActivityLogs from "./admin/AdminActivityLogs";
 import AdminTrash from "./admin/AdminTrash";
+import Reports from "./admin/Reports";
+import CourseReportDetailPage from "./admin/reports/course/CourseReportDetailPage";
+import OpeningReportDetailPage from "./admin/reports/course/OpeningReportDetailPage";
+import StudentAttendanceReportPage from "./admin/reports/course/StudentAttendanceReportPage";
+import SeminarParticipantsPage from "./admin/reports/event/SeminarParticipantsPage";
+import SeminarParticipantDetailPage from "./admin/reports/event/SeminarParticipantDetailPage";
 
 // USER
 
@@ -32,7 +38,6 @@ import Register from "./pages/users/Register";
 import Events from "./pages/users/Events";
 import Workshops from "./pages/users/Workshops";
 import About from "./pages/users/About";
-import Program from "./pages/users/Program";
 import StartupEventDetail from "./pages/users/StartupEventDetail";
 import StartupEventRegister from "./pages/users/StartupEventRegister";
 import IncubationPrograms from "./pages/users/IncubationPrograms";
@@ -154,6 +159,28 @@ ADMIN
               path="/admin/incubation-profiles"
               element={<AdminIncubationProfiles />}
             />
+            <Route path="reports" element={<Reports />} />
+            <Route
+              path="reports/seminars/:seminarId"
+              element={<SeminarParticipantsPage />}
+            />
+            <Route
+              path="reports/seminars/:seminarId/participants/:participantId"
+              element={<SeminarParticipantDetailPage />}
+            />
+            <Route
+              path="reports/courses/:courseId"
+              element={<CourseReportDetailPage />}
+            />
+            <Route
+              path="reports/courses/:courseId/openings/:openingId"
+              element={<OpeningReportDetailPage />}
+            />
+            <Route
+              path="reports/courses/:courseId/openings/:openingId/students/:registrationId"
+              element={<StudentAttendanceReportPage />}
+            />
+
             <Route path="activity-logs" element={<AdminActivityLogs />} />
 
             <Route path="trash" element={<AdminTrash />} />

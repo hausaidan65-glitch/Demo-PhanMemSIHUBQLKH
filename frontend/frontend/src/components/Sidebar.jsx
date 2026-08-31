@@ -15,6 +15,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Network,
+  BarChart3,
 } from "lucide-react";
 import logoSihub from "../assets/logoadmin.png";
 import { useState } from "react";
@@ -266,13 +267,9 @@ export default function Sidebar({ open, onClose }) {
               {/* BẤM PHẦN NÀY → VÀO TRANG KHÓA ĐÀO TẠO */}
               <button
                 type="button"
-                onClick={() => {
-                  navigate("/admin/courses");
-
-                  if (onClose) {
-                    onClose();
-                  }
-                }}
+                onClick={() =>
+                  setTrainingOpen((previous) => !previous)
+                }
                 className="
         flex
         min-w-0
@@ -707,13 +704,9 @@ export default function Sidebar({ open, onClose }) {
               {/* BẤM TÊN → VÀO DANH SÁCH CHƯƠNG TRÌNH */}
               <button
                 type="button"
-                onClick={() => {
-                  navigate("/admin/incubation-programs");
-
-                  if (onClose) {
-                    onClose();
-                  }
-                }}
+                onClick={() =>
+                  setIncubationOpen((previous) => !previous)
+                }
                 className="
         flex
         min-w-0
@@ -915,6 +908,46 @@ export default function Sidebar({ open, onClose }) {
             )}
           </div>
         </div>
+        <NavLink
+          to="/admin/reports"
+          onClick={onClose}
+          className={({ isActive }) =>
+            `
+      group
+      flex
+      min-h-11
+      items-center
+      gap-3
+      rounded-xl
+      px-3
+      py-2.5
+      text-sm
+      font-medium
+      transition-all
+
+      ${
+        isActive
+          ? "bg-green-600 text-white"
+          : "text-slate-300 hover:bg-slate-800 hover:text-white"
+      }
+    `
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <BarChart3
+                size={19}
+                className={
+                  isActive
+                    ? "text-white"
+                    : "text-slate-400 group-hover:text-green-400"
+                }
+              />
+
+              <span>Báo cáo</span>
+            </>
+          )}
+        </NavLink>
         {/* =====================================================
     HỆ THỐNG
 ===================================================== */}

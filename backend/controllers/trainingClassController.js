@@ -529,6 +529,9 @@ class TrainingClassController {
       const registerOpen = req.body.register_open || null;
 
       const registerClose = req.body.register_close || null;
+      const organizationStartDate = req.body.organization_start_date || null;
+
+      const organizationEndDate = req.body.organization_end_date || null;
       const maxStudents =
         req.body.max_students !== undefined
           ? Number(req.body.max_students)
@@ -658,7 +661,9 @@ class TrainingClassController {
           register_open: registerOpen,
 
           register_close: registerClose,
+          organization_start_date: organizationStartDate,
 
+          organization_end_date: organizationEndDate,
           max_students: maxStudents,
 
           current_students: currentStudents,
@@ -1178,7 +1183,15 @@ class TrainingClassController {
         req.body.register_close !== undefined
           ? req.body.register_close || null
           : existing.register_close;
+      const organizationStartDate =
+        req.body.organization_start_date !== undefined
+          ? req.body.organization_start_date || null
+          : existing.organization_start_date;
 
+      const organizationEndDate =
+        req.body.organization_end_date !== undefined
+          ? req.body.organization_end_date || null
+          : existing.organization_end_date;
       const maxStudents =
         req.body.max_students !== undefined
           ? Number(req.body.max_students)
@@ -1285,6 +1298,9 @@ class TrainingClassController {
           register_open: registerOpen,
 
           register_close: registerClose,
+          organization_start_date: organizationStartDate,
+
+          organization_end_date: organizationEndDate,
 
           max_students: maxStudents,
 

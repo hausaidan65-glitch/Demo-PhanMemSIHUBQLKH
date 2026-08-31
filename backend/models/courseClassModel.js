@@ -324,7 +324,80 @@ class CourseClassModel {
 
     return result;
   }
+  static async getEffectiveOrganizationPeriod(connection, classId) {
+    const [[row]] = await connection.query(
+      `
+    SELECT
+      cc.id,
 
+      cc.organization_start_date,
+      cc.organization_end_date,
+
+      COALESCE(
+        sessions.first_session_at,
+
+        CASE
+          WHEN cc.organization_start_date IS NOT NULL
+          THEN TIMESTAMP(
+            cc.organization_start_date,
+            '00:00:00'
+          )
+          ELSE NULL
+        END
+      ) AS organization_start_at,
+
+      COALESCE(
+        sessions.last_session_at,
+
+        CASE
+          WHEN cc.organization_end_date IS NOT NULL
+          THEN TIMESTAMP(
+            cc.organization_end_date,
+            '23:59:59'
+          )
+          ELSE NULL
+        END
+      ) AS organization_end_at
+
+    FROM course_classes cc
+
+    LEFT JOIN (
+      SELECT
+        class_id,
+
+        MIN(
+          TIMESTAMP(
+            session_date,
+            COALESCE(start_time, '00:00:00')
+          )
+        ) AS first_session_at,
+
+        MAX(
+          TIMESTAMP(
+            session_date,
+            COALESCE(
+              end_time,
+              start_time,
+              '23:59:59'
+            )
+          )
+        ) AS last_session_at
+
+      FROM course_class_sessions
+
+      GROUP BY class_id
+    ) sessions
+      ON sessions.class_id = cc.id
+
+    WHERE cc.id = ?
+
+    LIMIT 1
+    `,
+      [classId],
+    );
+
+    return row || null;
+  }
   // Delete
   static async delete(id, adminId) {
     const [result] = await db.query(

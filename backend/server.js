@@ -29,6 +29,8 @@ const incubationImportRoutes = require("./routes/incubationImportRoutes");
 const adminActivityLogRoutes = require("./routes/adminActivityLogRoutes");
 const eventImageRoutes = require("./routes/eventImageRoutes");
 const courseAttendanceRoutes = require("./routes/courseAttendanceRoutes");
+const courseReportRoutes = require("./routes/courseReportRoutes");
+const eventReportRoutes = require("./routes/eventReportRoutes");
 const SyncCourseClassStatusJob = require("./jobs/syncCourseClassStatusJob");
 const googleFormImportRoutes = require("./routes/googleFormImportRoutes");
 const app = express();
@@ -116,6 +118,8 @@ app.use("/api/incubation-import", incubationImportRoutes);
 app.use("/api/admin-activity-logs", adminActivityLogRoutes);
 app.use("/api/event-images", eventImageRoutes);
 app.use("/api/course-attendance", courseAttendanceRoutes);
+app.use("/api/reports/courses", courseReportRoutes);
+app.use("/api/reports/events", eventReportRoutes);
 app.use("/api/google-form-import", googleFormImportRoutes);
 /*
  * Health check dùng khi deploy.

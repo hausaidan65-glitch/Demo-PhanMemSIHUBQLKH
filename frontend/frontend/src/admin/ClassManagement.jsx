@@ -24,8 +24,14 @@ const EMPTY_OPENING_FORM = {
   intake_name: "",
   trainer_name: "",
   location: "",
+
   register_open: "",
   register_close: "",
+
+  // Thời gian tổ chức fallback.
+  organization_start_date: "",
+  organization_end_date: "",
+
   max_students: 50,
 
   current_students: 0,
@@ -214,19 +220,44 @@ function toDateTimeLocal(value) {
 
   return localDate.toISOString().slice(0, 16);
 }
+function toDateInputLocal(value) {
+  if (!value) {
+    return "";
+  }
 
+  // Nếu backend trả trực tiếp YYYY-MM-DD
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
 function formatDate(value) {
   if (!value) {
     return "—";
   }
 
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  const normalized = toDateInputLocal(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
+  if (!normalized) {
+    return "—";
   }
 
-  return date.toLocaleDateString("vi-VN");
+  const [year, month, day] = normalized.split("-");
+
+  return `${day}/${month}/${year}`;
 }
 
 function formatTime(value) {
@@ -457,7 +488,11 @@ function ClassManagement() {
       register_open: toDateTimeLocal(opening.register_open),
 
       register_close: toDateTimeLocal(opening.register_close),
+      organization_start_date: toDateInputLocal(
+        opening.organization_start_date,
+      ),
 
+      organization_end_date: toDateInputLocal(opening.organization_end_date),
       max_students: Number(opening.max_students) || 50,
 
       current_students: Number(opening.current_students) || 0,
@@ -490,7 +525,7 @@ function ClassManagement() {
 
               session_no: index + 1,
 
-              session_date: String(session.session_date || "").slice(0, 10),
+              session_date: toDateInputLocal(session.session_date),
 
               start_time: String(session.start_time || "").slice(0, 5),
 
@@ -1035,7 +1070,33 @@ function ClassManagement() {
 
       return;
     }
+    const organizationStartDate = openingForm.organization_start_date;
 
+    const organizationEndDate = openingForm.organization_end_date;
+
+    // Không bắt buộc ở Admin thường nếu đã có sessions.
+    // Nhưng nếu nhập thì phải nhập đủ cặp.
+    if (organizationStartDate && !organizationEndDate) {
+      alert("Vui lòng nhập ngày kết thúc tổ chức.");
+
+      return;
+    }
+
+    if (!organizationStartDate && organizationEndDate) {
+      alert("Vui lòng nhập ngày bắt đầu tổ chức.");
+
+      return;
+    }
+
+    if (
+      organizationStartDate &&
+      organizationEndDate &&
+      organizationEndDate < organizationStartDate
+    ) {
+      alert("Ngày kết thúc tổ chức không được trước ngày bắt đầu.");
+
+      return;
+    }
     for (let index = 0; index < openingSessions.length; index += 1) {
       const session = openingSessions[index];
 
@@ -1090,7 +1151,9 @@ function ClassManagement() {
       register_open: openingForm.register_open || null,
 
       register_close: openingForm.register_close || null,
+      organization_start_date: openingForm.organization_start_date || null,
 
+      organization_end_date: openingForm.organization_end_date || null,
       max_students: Number(openingForm.max_students),
 
       status: openingForm.status,
@@ -2153,6 +2216,16 @@ function ClassManagement() {
                                   <b>Học viên đăng ký:</b>{" "}
                                   {Number(opening.total_registrations || 0)}
                                 </p>
+                                <p className="text-slate-600">
+                                  <b>Thời gian tổ chức:</b>{" "}
+                                  {opening.effective_start_date
+                                    ? formatDate(opening.effective_start_date)
+                                    : "Chưa cập nhật"}
+                                  {" → "}
+                                  {opening.effective_end_date
+                                    ? formatDate(opening.effective_end_date)
+                                    : "Chưa cập nhật"}
+                                </p>
                               </div>
 
                               {opening.schedule_note && (
@@ -2763,7 +2836,39 @@ function ClassManagement() {
                           updateOpeningField("register_close", value)
                         }
                       />
+                      <div className="md:col-span-2">
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                          <p className="text-sm font-bold text-blue-900">
+                            Thời gian tổ chức
+                          </p>
 
+                          <div className="mt-4 grid gap-4 md:grid-cols-2">
+                            <FormInput
+                              label="Ngày bắt đầu tổ chức"
+                              type="date"
+                              value={openingForm.organization_start_date}
+                              onChange={(value) =>
+                                updateOpeningField(
+                                  "organization_start_date",
+                                  value,
+                                )
+                              }
+                            />
+
+                            <FormInput
+                              label="Ngày kết thúc tổ chức"
+                              type="date"
+                              value={openingForm.organization_end_date}
+                              onChange={(value) =>
+                                updateOpeningField(
+                                  "organization_end_date",
+                                  value,
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
                       <FormInput
                         label="Số học viên tối đa"
                         type="number"

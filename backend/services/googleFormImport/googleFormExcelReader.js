@@ -1,4 +1,17 @@
 const XLSX = require("xlsx");
+
+// =====================================================
+// BASIC
+// =====================================================
+
+function cleanCell(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
 function normalizeText(value) {
   return String(value || "")
     .trim()
@@ -8,6 +21,14 @@ function normalizeText(value) {
     .replace(/đ/g, "d")
     .replace(/\s+/g, " ");
 }
+
+// =====================================================
+// HEADER KEYWORDS
+//
+// Chỉ dùng để NHẬN DIỆN dòng header.
+// Không map dữ liệu ở bước này.
+// =====================================================
+
 const HEADER_KEYWORDS = [
   "dau thoi gian",
 
@@ -45,11 +66,15 @@ const HEADER_KEYWORDS = [
 
   "cau hoi",
 ];
+
+// =====================================================
+// CHẤM ĐIỂM MỘT DÒNG CÓ GIỐNG HEADER KHÔNG
+// =====================================================
+
 function scoreHeaderRow(row = []) {
   const cells = Array.isArray(row) ? row : [];
 
   let score = 0;
-
   let nonEmptyCount = 0;
 
   for (const cell of cells) {
@@ -63,6 +88,10 @@ function scoreHeaderRow(row = []) {
 
     const text = normalizeText(raw);
 
+    // -------------------------------------------------
+    // Tín hiệu header mạnh
+    // -------------------------------------------------
+
     const keywordMatched = HEADER_KEYWORDS.some(
       (keyword) => text === keyword || text.includes(keyword),
     );
@@ -71,7 +100,10 @@ function scoreHeaderRow(row = []) {
       score += 3;
     }
 
-    // Header Google Form thường là câu hỏi dài
+    // -------------------------------------------------
+    // Google Form thường dùng câu hỏi dài
+    // -------------------------------------------------
+
     if (
       raw.includes("?") ||
       text.startsWith("ban ") ||
@@ -81,22 +113,43 @@ function scoreHeaderRow(row = []) {
       score += 1;
     }
 
-    // Dấu hiệu đây là DATA chứ không phải header
-    if (
-      /^\d{1,2}\/\d{1,2}\/\d{4}/.test(raw) ||
-      /^0\d{9}$/.test(raw.replace(/\D/g, "")) ||
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
-    ) {
+    // -------------------------------------------------
+    // Dấu hiệu rõ đây là DATA
+    // -------------------------------------------------
+
+    // Ngày / timestamp
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(raw)) {
+      score -= 3;
+    }
+
+    // SĐT
+    const phoneDigits = raw.replace(/\D/g, "");
+
+    if (/^0\d{9}$/.test(phoneDigits)) {
+      score -= 3;
+    }
+
+    // Email
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
       score -= 3;
     }
   }
 
+  // Ít hơn 2 ô có dữ liệu thì không coi là header.
   if (nonEmptyCount < 2) {
     return -999;
   }
 
   return score;
 }
+
+// =====================================================
+// TÌM HEADER
+//
+// Chỉ tìm tối đa 15 dòng đầu.
+// Không được lấy dòng học viên làm header.
+// =====================================================
+
 function findHeaderRowIndex(rows = []) {
   const maxSearchRows = Math.min(rows.length, 15);
 
@@ -115,11 +168,13 @@ function findHeaderRowIndex(rows = []) {
   }
 
   /*
-   * Phải có ít nhất tín hiệu header tương đối rõ.
+   * Ít nhất phải có một tín hiệu header tương đối rõ.
    *
-   * Nếu không:
-   * => sheet này không có header đáng tin cậy.
-   * Không được lấy dòng học viên làm header.
+   * Nếu thấp hơn:
+   * => không đủ tin cậy.
+   * => trả -1.
+   *
+   * Tuyệt đối không tự lấy dòng đầu làm header.
    */
   if (bestScore < 3) {
     return -1;
@@ -127,45 +182,9 @@ function findHeaderRowIndex(rows = []) {
 
   return bestIndex;
 }
-// =====================================================
-// CLEAN
-// =====================================================
-
-function cleanCell(value) {
-  if (value === undefined || value === null) {
-    return "";
-  }
-
-  return String(value).trim();
-}
 
 // =====================================================
-// TÌM DÒNG HEADER
-//
-// Google Form thông thường:
-// dòng đầu tiên chính là header.
-//
-// Nhưng vẫn hỗ trợ trường hợp phía trên có dòng trống.
-// =====================================================
-
-function findHeaderRowIndex(rows = []) {
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = Array.isArray(rows[index]) ? rows[index] : [];
-
-    const nonEmptyCells = row.filter((cell) => cleanCell(cell) !== "");
-
-    // Tối thiểu 2 cột có dữ liệu
-    // mới coi đây là header.
-    if (nonEmptyCells.length >= 2) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-// =====================================================
-// CHUẨN HÓA HEADER
+// LẤY HEADER
 // =====================================================
 
 function getHeaders(rows = [], headerRowIndex = -1) {
@@ -180,17 +199,21 @@ function getHeaders(rows = [], headerRowIndex = -1) {
   return headerRow.map((value, index) => {
     const text = cleanCell(value);
 
-    // Cột trống vẫn cần tên ổn định
-    // để Preview không bị lệch index.
-    return text || `Cột ${index + 1}`;
+    /*
+     * Không bỏ cột trống.
+     *
+     * Vì nếu bỏ:
+     * column index phía sau sẽ bị lệch.
+     */
+    return text || `[Cột trống ${index + 1}]`;
   });
 }
 
 // =====================================================
-// SAMPLE ROWS
+// PREVIEW DỮ LIỆU KHI CÓ HEADER
 //
-// Bước này CHỈ dùng để Admin nhìn nhanh.
-// Chưa phải dữ liệu dùng để import.
+// Chỉ lấy tối đa 5 dòng.
+// Chưa dùng để import.
 // =====================================================
 
 function buildSampleRows(
@@ -232,15 +255,117 @@ function buildSampleRows(
 
   return sample;
 }
+// =====================================================
+// FULL DATA ROWS
+//
+// Dùng cho bước Mapping / Review.
+//
+// - Giữ rowNumber gốc để Admin biết dòng Excel.
+// - Không loại dữ liệu chỉ vì thiếu một vài field.
+// - Chưa quyết định dòng rác ở đây.
+// =====================================================
+
+function buildDataRows(rows = [], headerRowIndex = -1, headers = []) {
+  if (headerRowIndex < 0 || headers.length === 0) {
+    return [];
+  }
+
+  const result = [];
+
+  for (let index = headerRowIndex + 1; index < rows.length; index += 1) {
+    const row = Array.isArray(rows[index]) ? rows[index] : [];
+
+    const hasData = row.some((cell) => cleanCell(cell) !== "");
+
+    if (!hasData) {
+      continue;
+    }
+
+    const values = {};
+
+    headers.forEach((header, columnIndex) => {
+      values[header] = cleanCell(row[columnIndex]);
+    });
+
+    result.push({
+      rowNumber: index + 1,
+      values,
+    });
+  }
+
+  return result;
+}
+// =====================================================
+// RAW PREVIEW
+//
+// Dùng khi KHÔNG nhận diện được header.
+//
+// Quan trọng:
+// - vẫn cho Admin nhìn thấy dữ liệu
+// - nhưng không gọi các giá trị đó là header
+// =====================================================
+
+function buildRawPreviewRows(rows = [], limit = 5) {
+  const result = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = Array.isArray(rows[index]) ? rows[index] : [];
+
+    const values = row.map((cell) => cleanCell(cell));
+
+    const hasData = values.some(Boolean);
+
+    if (!hasData) {
+      continue;
+    }
+
+    result.push({
+      rowNumber: index + 1,
+      values,
+    });
+
+    if (result.length >= limit) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+// =====================================================
+// ĐẾM DÒNG CÓ DATA
+// =====================================================
+
+function countDataRows(rows = [], headerRowIndex = -1) {
+  /*
+   * Có header:
+   * đếm từ dòng sau header.
+   */
+  if (headerRowIndex >= 0) {
+    return rows
+      .slice(headerRowIndex + 1)
+      .filter((row) =>
+        (Array.isArray(row) ? row : []).some((cell) => cleanCell(cell) !== ""),
+      ).length;
+  }
+
+  /*
+   * Không có header:
+   * toàn bộ các dòng có dữ liệu đều là raw data.
+   */
+  return rows.filter((row) =>
+    (Array.isArray(row) ? row : []).some((cell) => cleanCell(cell) !== ""),
+  ).length;
+}
 
 // =====================================================
 // READ GOOGLE FORM WORKBOOK
 //
 // QUAN TRỌNG:
-// - Không detect Training/Event
+// - Không detect TRAINING / EVENT
 // - Không map student
 // - Không insert DB
-// - Không gọi service SIHUB cũ
+// - Không gọi SIHUB import cũ
 // =====================================================
 
 function readGoogleFormWorkbook(file) {
@@ -269,39 +394,76 @@ function readGoogleFormWorkbook(file) {
 
     const rows = XLSX.utils.sheet_to_json(worksheet, {
       header: 1,
+
       defval: "",
+
       blankrows: false,
 
-      // Giữ dữ liệu hiển thị giống Excel.
-      // Ví dụ ngày tháng không biến thành serial.
+      /*
+       * Giữ giá trị hiển thị giống Excel.
+       *
+       * Timestamp Google Form:
+       * 4/22/2026 20:40:11
+       *
+       * thay vì serial Excel.
+       */
       raw: false,
     });
 
+    // ===================================================
+    // HEADER
+    // ===================================================
+
     const headerRowIndex = findHeaderRowIndex(rows);
 
-    const headers = getHeaders(rows, headerRowIndex);
+    const hasDetectedHeader = headerRowIndex >= 0;
 
-    const dataRows =
-      headerRowIndex >= 0
-        ? rows
-            .slice(headerRowIndex + 1)
-            .filter((row) =>
-              (Array.isArray(row) ? row : []).some(
-                (cell) => cleanCell(cell) !== "",
-              ),
-            )
-        : [];
+    const headers = hasDetectedHeader ? getHeaders(rows, headerRowIndex) : [];
+
+    // ===================================================
+    // RETURN SHEET
+    // ===================================================
 
     return {
       sheetName,
 
-      headerRowNumber: headerRowIndex >= 0 ? headerRowIndex + 1 : null,
+      /*
+       * FE dùng field này để biết:
+       *
+       *  có thể map
+       *  chưa thể map
+       */
+      hasDetectedHeader,
+
+      /*
+       * 1-based cho Admin dễ hiểu.
+       *
+       * JS index 0
+       * => Excel row 1
+       */
+      headerRowNumber: hasDetectedHeader ? headerRowIndex + 1 : null,
 
       headers,
 
-      totalRows: dataRows.length,
+      /*
+       * Tổng số dòng dữ liệu thực tế.
+       */
+      totalRows: countDataRows(rows, headerRowIndex),
 
-      sampleRows: buildSampleRows(rows, headerRowIndex, headers, 5),
+      /*
+       * Preview có header.
+       */
+      sampleRows: hasDetectedHeader
+        ? buildSampleRows(rows, headerRowIndex, headers, 5)
+        : [],
+      dataRows: hasDetectedHeader
+        ? buildDataRows(rows, headerRowIndex, headers)
+        : [],
+
+      /*
+       * Preview raw nếu không detect được header.
+       */
+      rawPreviewRows: !hasDetectedHeader ? buildRawPreviewRows(rows, 5) : [],
     };
   });
 
@@ -313,6 +475,10 @@ function readGoogleFormWorkbook(file) {
     sheets,
   };
 }
+
+// =====================================================
+// EXPORT
+// =====================================================
 
 module.exports = {
   readGoogleFormWorkbook,

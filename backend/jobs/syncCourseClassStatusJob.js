@@ -51,13 +51,24 @@ class SyncCourseClassStatusJob {
             AND cc.register_close <= NOW()
           )
 
-          OR
+        OR
 
-          (
-            cc.register_close IS NULL
-            AND first_session.first_session_at IS NOT NULL
-            AND first_session.first_session_at <= NOW()
-          )
+(
+  cc.register_close IS NULL
+
+  AND COALESCE(
+  CASE
+    WHEN cc.organization_start_date IS NOT NULL
+    THEN TIMESTAMP(
+      cc.organization_start_date,
+      '00:00:00'
+    )
+    ELSE NULL
+  END,
+
+  first_session.first_session_at
+) <= NOW()
+)
         )
       `,
     );
@@ -72,7 +83,7 @@ class SyncCourseClassStatusJob {
       `
       UPDATE course_classes cc
 
-      INNER JOIN (
+    LEFT JOIN (
         SELECT
           class_id,
 
@@ -102,9 +113,18 @@ class SyncCourseClassStatusJob {
 
         AND cc.status = 'CLOSED'
 
-        AND last_session.last_session_at IS NOT NULL
+     AND COALESCE(
+  CASE
+    WHEN cc.organization_end_date IS NOT NULL
+    THEN TIMESTAMP(
+      cc.organization_end_date,
+      '23:59:59'
+    )
+    ELSE NULL
+  END,
 
-        AND last_session.last_session_at <= NOW()
+  last_session.last_session_at
+) <= NOW()
       `,
     );
 

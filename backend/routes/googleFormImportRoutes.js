@@ -5,6 +5,8 @@ const router = express.Router();
 
 const {
   previewGoogleForm,
+  validateGoogleForm,
+  commitGoogleForm,
 } = require("../controllers/googleFormImportController");
 
 // =====================================================
@@ -40,5 +42,19 @@ const upload = multer({
 // =====================================================
 
 router.post("/preview", upload.single("file"), previewGoogleForm);
+// =====================================================
+// POST /api/google-form-import/validate
+//
+// JSON body, không upload file lại.
+// =====================================================
+
+router.post(
+  "/validate",
+  express.json({
+    limit: "15mb",
+  }),
+  validateGoogleForm,
+);
+router.post("/commit", commitGoogleForm);
 
 module.exports = router;

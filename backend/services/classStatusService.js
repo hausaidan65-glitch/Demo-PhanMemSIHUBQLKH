@@ -7,13 +7,29 @@ class ClassStatusService {
     maxStudents = 0,
 
     registerClose = null,
-
+    organizationStartDate = null,
+    organizationEndDate = null,
     firstSessionAt = null,
 
     lastSessionAt = null,
 
     now = new Date(),
   }) {
+    // ============================================
+    // THỜI GIAN TỔ CHỨC HIỆU LỰC
+    //
+    // Ưu tiên:
+    // 1. Session thật
+    // 2. Ngày tổ chức của opening
+    // ============================================
+
+    const effectiveStartAt = organizationStartDate
+      ? `${organizationStartDate}T00:00:00`
+      : firstSessionAt || null;
+
+    const effectiveEndAt = organizationEndDate
+      ? `${organizationEndDate}T23:59:59`
+      : lastSessionAt || null;
     // Trạng thái do Admin chủ động đóng/kết thúc
     if (status === "FINISHED") {
       return "FINISHED";
@@ -23,12 +39,12 @@ class ClassStatusService {
     // => lớp thực tế đã kết thúc
     // ============================================
 
-    if (lastSessionAt) {
-      const lastSessionDate = new Date(lastSessionAt);
+    if (effectiveEndAt) {
+      const endDate = new Date(effectiveEndAt);
 
       if (
-        !Number.isNaN(lastSessionDate.getTime()) &&
-        now.getTime() >= lastSessionDate.getTime()
+        !Number.isNaN(endDate.getTime()) &&
+        now.getTime() >= endDate.getTime()
       ) {
         return "FINISHED";
       }
@@ -59,12 +75,12 @@ class ClassStatusService {
 
     // Dữ liệu cũ không có register_close:
     // đóng khi đã tới buổi học đầu tiên
-    if (!registerClose && firstSessionAt) {
-      const firstSessionDate = new Date(firstSessionAt);
+    if (!registerClose && effectiveStartAt) {
+      const startDate = new Date(effectiveStartAt);
 
       if (
-        !Number.isNaN(firstSessionDate.getTime()) &&
-        now.getTime() >= firstSessionDate.getTime()
+        !Number.isNaN(startDate.getTime()) &&
+        now.getTime() >= startDate.getTime()
       ) {
         return "CLOSED";
       }

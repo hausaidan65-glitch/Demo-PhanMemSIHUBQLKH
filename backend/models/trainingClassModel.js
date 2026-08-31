@@ -25,96 +25,123 @@ class TrainingClassModel {
       params.push(String(query.status).toUpperCase());
     }
     // =========================================================
-    // LỌC THEO NĂM CỦA ĐỢT TỔ CHỨC
+    // LỌC THEO NĂM CỦA THỜI GIAN TỔ CHỨC
     //
     // Ưu tiên:
-    // 1. register_open
-    // 2. register_close
-    // 3. schedule_note của dữ liệu cũ
+    // 1. Lịch buổi học (course_class_sessions)
+    // 2. organization_start_date / organization_end_date
+    //
+    // Dùng nguyên tắc overlap:
+    // lớp chỉ cần giao với khoảng báo cáo là được tính.
     // =========================================================
     if (query.year) {
       const year = Number(query.year);
 
       if (Number.isInteger(year) && year >= 2000 && year <= 2100) {
+        const reportStart = `${year}-01-01`;
+
+        const reportEnd = `${year}-12-31`;
+
         conditions.push(`
       EXISTS (
         SELECT 1
+
         FROM course_classes cc_year
 
+        LEFT JOIN (
+          SELECT
+            class_id,
+            MIN(session_date) AS first_session_date,
+            MAX(session_date) AS last_session_date
+
+          FROM course_class_sessions
+
+          GROUP BY class_id
+        ) session_period
+          ON session_period.class_id =
+             cc_year.id
+
         WHERE cc_year.course_id = c.id
+          AND cc_year.deleted_at IS NULL
 
-          AND (
-            YEAR(cc_year.register_open) = ?
+          AND COALESCE(
+  cc_year.organization_start_date,
+  session_period.first_session_date
+) <= ?
 
-            OR YEAR(cc_year.register_close) = ?
-
-            OR (
-              cc_year.register_open IS NULL
-              AND cc_year.register_close IS NULL
-              AND cc_year.schedule_note IS NOT NULL
-              AND cc_year.schedule_note LIKE ?
-            )
-          )
+          AND COALESCE(
+  cc_year.organization_end_date,
+  session_period.last_session_date
+) >= ?
       )
     `);
 
-        params.push(year, year, `%${year}%`);
+        params.push(reportEnd, reportStart);
       }
     }
 
     // =========================================================
-    // LỌC THEO THÁNG CỦA ĐỢT TỔ CHỨC
+    // LỌC THEO THÁNG CỦA THỜI GIAN TỔ CHỨC
     //
-    // Dữ liệu mới:
-    // register_open / register_close
+    // Ưu tiên:
+    // 1. Lịch buổi học (course_class_sessions)
+    // 2. organization_start_date / organization_end_date
     //
-    // Dữ liệu cũ:
-    // schedule_note kiểu:
-    // "Ngày 19/8 - 28/8/2025"
+    // Không dùng register_open/register_close
+    // làm thời gian báo cáo.
     // =========================================================
-    if (query.month) {
+    if (query.month && query.year) {
       const month = Number(query.month);
+      const year = Number(query.year);
 
-      if (Number.isInteger(month) && month >= 1 && month <= 12) {
-        /*
-         * Pattern:
-         * ngày/tháng
-         *
-         * Ví dụ tháng 6:
-         * 19/6
-         * 19/06
-         */
-        const monthRegex = `[0-9]{1,2}/0?${month}([^0-9]|$)`;
+      if (
+        Number.isInteger(month) &&
+        month >= 1 &&
+        month <= 12 &&
+        Number.isInteger(year)
+      ) {
+        const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+
+        const nextMonth =
+          month === 12
+            ? `${year + 1}-01-01`
+            : `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
         conditions.push(`
       EXISTS (
         SELECT 1
+
         FROM course_classes cc_month
 
+        LEFT JOIN (
+          SELECT
+            class_id,
+            MIN(session_date) AS first_session_date,
+            MAX(session_date) AS last_session_date
+
+          FROM course_class_sessions
+
+          GROUP BY class_id
+        ) session_period
+          ON session_period.class_id =
+             cc_month.id
+
         WHERE cc_month.course_id = c.id
+          AND cc_month.deleted_at IS NULL
 
-          AND (
-            MONTH(cc_month.register_open) = ?
+          AND COALESCE(
+  cc_month.organization_start_date,
+  session_period.first_session_date
+) < ?
 
-            OR MONTH(cc_month.register_close) = ?
-
-            OR (
-              cc_month.register_open IS NULL
-              AND cc_month.register_close IS NULL
-              AND cc_month.schedule_note IS NOT NULL
-
-              AND (
-                cc_month.schedule_note REGEXP ?
-
-                OR LOWER(cc_month.schedule_note)
-                  LIKE ?
-              )
-            )
-          )
+          AND COALESCE(
+  cc_month.organization_end_date,
+  session_period.last_session_date
+) >= ?
       )
     `);
 
-        params.push(month, month, monthRegex, `%tháng ${month}%`);
+        params.push(nextMonth, monthStart);
       }
     }
     // =========================================================
@@ -353,7 +380,46 @@ c.status,
 
     return rows;
   }
+  static async getEffectiveOrganizationPeriod(classId) {
+    const [[row]] = await db.query(
+      `
+    SELECT
+      cc.id,
 
+    COALESCE(
+  cc.organization_start_date,
+  session_period.first_session_date
+) AS effective_start_date,
+
+COALESCE(
+  cc.organization_end_date,
+  session_period.last_session_date
+) AS effective_end_date
+
+    FROM course_classes cc
+
+    LEFT JOIN (
+      SELECT
+        class_id,
+        MIN(session_date) AS first_session_date,
+        MAX(session_date) AS last_session_date
+
+      FROM course_class_sessions
+
+      GROUP BY class_id
+    ) session_period
+      ON session_period.class_id = cc.id
+
+    WHERE cc.id = ?
+      AND cc.deleted_at IS NULL
+
+    LIMIT 1
+    `,
+      [classId],
+    );
+
+    return row || null;
+  }
   // =========================================================
   // LẤY CÁC BUỔI HỌC
   // =========================================================
@@ -588,7 +654,44 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
     return result.insertId;
   }
+  // =========================================================
+  // VALIDATE THỜI GIAN TỔ CHỨC
+  // =========================================================
+  static validateOrganizationDates(data = {}) {
+    const startDate = data.organization_start_date || null;
+
+    const endDate = data.organization_end_date || null;
+
+    // Dữ liệu cũ có thể chưa có ngày tổ chức.
+    // Không ép dữ liệu legacy phải có ngay.
+    if (!startDate && !endDate) {
+      return;
+    }
+
+    // Nếu chỉ nhập 1 đầu thì báo lỗi.
+    if (startDate && !endDate) {
+      throw new Error("Vui lòng nhập ngày kết thúc tổ chức.");
+    }
+
+    if (!startDate && endDate) {
+      throw new Error("Vui lòng nhập ngày bắt đầu tổ chức.");
+    }
+
+    const start = new Date(`${startDate}T00:00:00`);
+
+    const end = new Date(`${endDate}T00:00:00`);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new Error("Thời gian tổ chức không hợp lệ.");
+    }
+
+    if (end.getTime() < start.getTime()) {
+      throw new Error("Ngày kết thúc tổ chức không được trước ngày bắt đầu.");
+    }
+  }
   static async createOpening(connection, courseId, opening) {
+    this.validateOrganizationDates(opening);
+
     const [result] = await connection.query(
       `
       INSERT INTO course_classes
@@ -599,32 +702,36 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         intake_name,
         trainer_name,
         location,
-        register_open,
-        register_close,
-        max_students,
+      register_open,
+register_close,
+organization_start_date,
+organization_end_date,
+max_students,
         current_students,
         status,
         schedule_note
       )
 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?)
     `,
       [
         courseId,
 
         opening.class_code || null,
-
         opening.class_name || null,
-
         opening.intake_name || null,
-
         opening.trainer_name || null,
-
         opening.location || null,
 
         opening.register_open || null,
-
         opening.register_close || null,
+
+        // ============================
+        // THỜI GIAN TỔ CHỨC
+        // ============================
+
+        opening.organization_start_date || null,
+        opening.organization_end_date || null,
 
         Number(opening.max_students) || 50,
 
@@ -787,6 +894,8 @@ LIMIT 1
   // course_classes = Đợt tổ chức
   // =========================================================
   static async updateOpening(courseId, openingId, data) {
+    this.validateOrganizationDates(data);
+
     const [result] = await db.query(
       `
     UPDATE course_classes
@@ -797,9 +906,13 @@ LIMIT 1
       intake_name = ?,
       trainer_name = ?,
       location = ?,
-      register_open = ?,
-      register_close = ?,
-      max_students = ?,
+     register_open = ?,
+register_close = ?,
+
+organization_start_date = ?,
+organization_end_date = ?,
+
+max_students = ?,
       current_students = ?,
       status = ?,
       schedule_note = ?
@@ -816,7 +929,8 @@ LIMIT 1
         data.location || null,
         data.register_open || null,
         data.register_close || null,
-
+        data.organization_start_date || null,
+        data.organization_end_date || null,
         data.max_students,
 
         data.current_students,
@@ -838,6 +952,8 @@ LIMIT 1
     data,
     sessions = [],
   ) {
+    this.validateOrganizationDates(data);
+
     const connection = await db.getConnection();
 
     try {
@@ -857,9 +973,13 @@ LIMIT 1
         intake_name = ?,
         trainer_name = ?,
         location = ?,
-        register_open = ?,
-        register_close = ?,
-        max_students = ?,
+      register_open = ?,
+register_close = ?,
+
+organization_start_date = ?,
+organization_end_date = ?,
+
+max_students = ?,
         current_students = ?,
         status = ?,
         schedule_note = ?
@@ -877,7 +997,8 @@ LIMIT 1
 
           data.register_open || null,
           data.register_close || null,
-
+          data.organization_start_date || null,
+          data.organization_end_date || null,
           Number(data.max_students) || 50,
           Number(data.current_students) || 0,
 
@@ -1054,9 +1175,13 @@ LIMIT 1
         intake_name,
         trainer_name,
         location,
-        register_open,
-        register_close,
-        max_students,
+       register_open,
+register_close,
+
+organization_start_date,
+organization_end_date,
+
+max_students,
         current_students,
         status,
         schedule_note,
@@ -1269,42 +1394,64 @@ WHERE cc.course_id = ?
   static async getClassOpenings(courseId) {
     const [rows] = await db.query(
       `
+    SELECT
+      cc.id,
+      cc.course_id,
+
+      cc.class_code,
+      cc.class_name,
+      cc.intake_name,
+      cc.trainer_name,
+      cc.location,
+
+      cc.register_open,
+      cc.register_close,
+
+      cc.organization_start_date,
+      cc.organization_end_date,
+
+      session_period.first_session_date,
+      session_period.last_session_date,
+
+     COALESCE(
+  cc.organization_start_date,
+  session_period.first_session_date
+) AS effective_start_date,
+
+   COALESCE(
+  cc.organization_end_date,
+  session_period.last_session_date
+) AS effective_end_date,
+
+      cc.max_students,
+      cc.current_students,
+      cc.status,
+      cc.schedule_note,
+      cc.created_at,
+      cc.updated_at,
+
+      (
+        SELECT COUNT(*)
+        FROM registrations r
+        WHERE r.class_id = cc.id
+      ) AS total_registrations
+
+    FROM course_classes cc
+
+    LEFT JOIN (
       SELECT
-        cc.id,
+        class_id,
+        MIN(session_date) AS first_session_date,
+        MAX(session_date) AS last_session_date
+      FROM course_class_sessions
+      GROUP BY class_id
+    ) session_period
+      ON session_period.class_id = cc.id
 
-        cc.course_id,
+    WHERE cc.course_id = ?
+      AND cc.deleted_at IS NULL
 
-        cc.class_code,
-        cc.class_name,
-        cc.intake_name,
-        cc.trainer_name,
-        cc.location,
-
-        cc.register_open,
-        cc.register_close,
-
-        cc.max_students,
-        cc.current_students,
-
-        cc.status,
-
-        cc.schedule_note,
-
-        cc.created_at,
-        cc.updated_at,
-
-        (
-          SELECT COUNT(*)
-          FROM registrations r
-          WHERE r.class_id = cc.id
-        ) AS total_registrations
- 
-     FROM course_classes cc
-
-WHERE cc.course_id = ?
-  AND cc.deleted_at IS NULL
-
-ORDER BY cc.id DESC
+    ORDER BY cc.id DESC
     `,
       [courseId],
     );
@@ -1313,13 +1460,9 @@ ORDER BY cc.id DESC
       ...item,
 
       id: Number(item.id) || null,
-
       course_id: Number(item.course_id) || null,
-
       max_students: Number(item.max_students) || 0,
-
       current_students: Number(item.current_students) || 0,
-
       total_registrations: Number(item.total_registrations) || 0,
     }));
   }
@@ -1640,6 +1783,8 @@ ORDER BY cc.id DESC
     data,
     sessions,
   ) {
+    this.validateOrganizationDates(data);
+
     const connection = await db.getConnection();
 
     try {
@@ -1681,9 +1826,13 @@ ORDER BY cc.id DESC
         intake_name = ?,
         trainer_name = ?,
         location = ?,
-        register_open = ?,
-        register_close = ?,
-        max_students = ?,
+      register_open = ?,
+register_close = ?,
+
+organization_start_date = ?,
+organization_end_date = ?,
+
+max_students = ?,
         current_students = ?,
         status = ?,
         schedule_note = ?,
@@ -1706,6 +1855,8 @@ ORDER BY cc.id DESC
           data.register_open || null,
 
           data.register_close || null,
+          data.organization_start_date || null,
+          data.organization_end_date || null,
 
           Number(data.max_students) || 50,
 
@@ -1882,27 +2033,92 @@ ORDER BY cc.id DESC
   static async getFilterOptions() {
     const [rows] = await db.query(`
     SELECT
-      register_open,
-      register_close,
-      schedule_note
+      cc.organization_start_date,
+      cc.organization_end_date,
 
-    FROM course_classes
+      session_period.first_session_date,
+      session_period.last_session_date,
 
-    WHERE deleted_at IS NULL
+      cc.register_open,
+      cc.register_close,
+      cc.schedule_note
+
+    FROM course_classes cc
+
+    LEFT JOIN (
+      SELECT
+        class_id,
+        MIN(session_date) AS first_session_date,
+        MAX(session_date) AS last_session_date
+
+      FROM course_class_sessions
+
+      GROUP BY class_id
+    ) session_period
+      ON session_period.class_id = cc.id
+
+    WHERE cc.deleted_at IS NULL
   `);
 
     const years = new Set();
 
     for (const item of rows) {
-      if (item.register_open) {
-        years.add(new Date(item.register_open).getFullYear());
+      // =====================================================
+      // 1. EFFECTIVE PERIOD
+      //
+      // Ưu tiên session trước.
+      // Nếu không có session mới dùng organization_*.
+      // =====================================================
+
+      const effectiveStart =
+        item.organization_start_date || item.first_session_date || null;
+
+      const effectiveEnd =
+        item.organization_end_date || item.last_session_date || null;
+      if (effectiveStart) {
+        const year = new Date(effectiveStart).getFullYear();
+
+        if (!Number.isNaN(year)) {
+          years.add(year);
+        }
       }
 
-      if (item.register_close) {
-        years.add(new Date(item.register_close).getFullYear());
+      if (effectiveEnd) {
+        const year = new Date(effectiveEnd).getFullYear();
+
+        if (!Number.isNaN(year)) {
+          years.add(year);
+        }
       }
 
-      if (item.schedule_note) {
+      // =====================================================
+      // 2. FALLBACK LEGACY
+      //
+      // Chỉ dùng register_* nếu hoàn toàn chưa có
+      // session và organization period.
+      // =====================================================
+
+      if (!effectiveStart && item.register_open) {
+        const year = new Date(item.register_open).getFullYear();
+
+        if (!Number.isNaN(year)) {
+          years.add(year);
+        }
+      }
+
+      if (!effectiveEnd && item.register_close) {
+        const year = new Date(item.register_close).getFullYear();
+
+        if (!Number.isNaN(year)) {
+          years.add(year);
+        }
+      }
+
+      // =====================================================
+      // 3. LEGACY CUỐI CÙNG: schedule_note
+      // =====================================================
+
+      if (!effectiveStart && !effectiveEnd && item.schedule_note) {
         const matches = String(item.schedule_note).match(/\b(20\d{2})\b/g);
 
         if (matches) {

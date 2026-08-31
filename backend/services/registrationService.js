@@ -52,6 +52,9 @@ class RegistrationService {
 
       firstSessionAt: firstSession?.first_session_at,
       lastSessionAt: lastSession?.last_session_at,
+      organizationStartDate: courseClass.organization_start_date,
+
+      organizationEndDate: courseClass.organization_end_date,
     });
 
     await connection.query(
@@ -217,7 +220,7 @@ class RegistrationService {
         data.class_id,
       );
       const effectiveStatus = ClassStatusService.resolveEffectiveStatus({
-        status: courseClass.status,
+        status: courseClass.status === "FULL" ? "OPEN" : courseClass.status,
 
         currentStudents: courseClass.current_students,
 
@@ -228,6 +231,14 @@ class RegistrationService {
         firstSessionAt: firstSession?.first_session_at,
 
         lastSessionAt: lastSession?.last_session_at,
+
+        // =====================================
+        // FALLBACK THỜI GIAN TỔ CHỨC
+        // =====================================
+
+        organizationStartDate: courseClass.organization_start_date,
+
+        organizationEndDate: courseClass.organization_end_date,
       });
       // ============================
       // 3. Kiểm tra trạng thái thực tế
