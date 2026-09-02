@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import axios from "axios";
 
+import IncubationProgressModal from "./incubation/progress/IncubationProgressModal";
+
 import {
   CalendarDays,
   CheckCircle2,
@@ -1147,6 +1149,9 @@ export default function AdminIncubationPrograms() {
 
   const [deleting, setDeleting] = useState(false);
 
+  // PROGRESS
+  const [progressProgram, setProgressProgram] = useState(null);
+
   // ==========================================================
   // PARAMS
   // ==========================================================
@@ -1769,6 +1774,16 @@ export default function AdminIncubationPrograms() {
                       <div className="flex justify-center gap-2">
                         <button
                           type="button"
+                          title="Cập nhật tiến độ"
+                          aria-label={`Cập nhật tiến độ ${program.program_name}`}
+                          onClick={() => setProgressProgram(program)}
+                          className="rounded-lg bg-emerald-50 p-2 text-emerald-600 hover:bg-emerald-100"
+                        >
+                          <Clock3 size={18} />
+                        </button>
+
+                        <button
+                          type="button"
                           title="Xem hồ sơ"
                           onClick={() => openProfiles(program)}
                           className="rounded-lg bg-blue-50 p-2 text-blue-600 hover:bg-blue-100"
@@ -1851,6 +1866,13 @@ export default function AdminIncubationPrograms() {
         }}
         onConfirm={confirmDelete}
       />
+      {progressProgram && (
+        <IncubationProgressModal
+          key={progressProgram.id}
+          program={progressProgram}
+          onClose={() => setProgressProgram(null)}
+        />
+      )}
     </div>
   );
 }

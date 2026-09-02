@@ -7,6 +7,9 @@ const AuthMiddleware = require("../middleware/authMiddleware");
 const RoleMiddleware = require("../middleware/roleMiddleware");
 
 const ScopeMiddleware = require("../middleware/scopeMiddleware");
+const StartupConnectionProgressController = require(
+  "../controllers/startupConnectionProgressController",
+);
 
 const {
   getEvents,
@@ -86,6 +89,22 @@ router.delete(
   allowAdmin,
   allowEvent,
   deleteParticipant,
+);
+
+router.get(
+  "/events/:eventId/progress",
+  verifyToken,
+  allowAdmin,
+  allowEvent,
+  StartupConnectionProgressController.index,
+);
+
+router.post(
+  "/events/:eventId/progress",
+  verifyToken,
+  allowAdmin,
+  allowEvent,
+  StartupConnectionProgressController.store,
 );
 
 // ==========================================

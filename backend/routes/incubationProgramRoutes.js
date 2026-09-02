@@ -3,6 +3,9 @@ const express = require("express");
 const router = express.Router();
 
 const IncubationProgramController = require("../controllers/incubationProgramController");
+const IncubationProgramProgressController = require(
+  "../controllers/incubationProgramProgressController",
+);
 const AuthMiddleware = require("../middleware/authMiddleware");
 
 const RoleMiddleware = require("../middleware/roleMiddleware");
@@ -29,6 +32,22 @@ router.get(
   allowAdmin,
   allowIncubation,
   IncubationProgramController.statistics,
+);
+
+router.get(
+  "/:programId/progress",
+  verifyToken,
+  allowAdmin,
+  allowIncubation,
+  IncubationProgramProgressController.index,
+);
+
+router.post(
+  "/:programId/progress",
+  verifyToken,
+  allowAdmin,
+  allowIncubation,
+  IncubationProgramProgressController.store,
 );
 
 router.post(

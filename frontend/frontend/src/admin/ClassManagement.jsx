@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import CourseClassProgressModal from "./training/progress/CourseClassProgressModal";
 import {
   ChevronDown,
   Eye,
@@ -310,6 +311,7 @@ function ClassManagement() {
   const [exporting, setExporting] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
+  const [progressOpening, setProgressOpening] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedOpening, setSelectedOpening] = useState(null);
   const [openingStudents, setOpeningStudents] = useState([]);
@@ -2236,6 +2238,13 @@ function ClassManagement() {
                             </div>
 
                             <div className="flex shrink-0 flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setProgressOpening(opening)}
+                                className="rounded-lg border border-violet-200 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                              >
+                                Cập nhật tiến độ
+                              </button>
                               {/* XEM HỌC VIÊN */}
 
                               <button
@@ -3137,6 +3146,13 @@ function ClassManagement() {
             </form>
           </div>
         </div>
+      )}
+      {progressOpening && (
+        <CourseClassProgressModal
+          key={progressOpening.id}
+          opening={progressOpening}
+          onClose={() => setProgressOpening(null)}
+        />
       )}
     </div>
   );

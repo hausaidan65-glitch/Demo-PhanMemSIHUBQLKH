@@ -3,6 +3,9 @@ const express = require("express");
 const router = express.Router();
 
 const CourseClassController = require("../controllers/courseClassController");
+const CourseClassProgressController = require(
+  "../controllers/courseClassProgressController",
+);
 
 const AuthMiddleware = require("../middleware/authMiddleware");
 
@@ -21,6 +24,22 @@ const allowTraining = ScopeMiddleware.allow("TRAINING");
 router.get("/", CourseClassController.index);
 
 router.get("/course/:courseId", CourseClassController.getByCourse);
+
+router.get(
+  "/:openingId/progress",
+  verifyToken,
+  allowAdmin,
+  allowTraining,
+  CourseClassProgressController.index,
+);
+
+router.post(
+  "/:openingId/progress",
+  verifyToken,
+  allowAdmin,
+  allowTraining,
+  CourseClassProgressController.store,
+);
 
 router.get("/:id", CourseClassController.show);
 

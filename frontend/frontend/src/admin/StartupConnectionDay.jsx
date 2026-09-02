@@ -1,4 +1,5 @@
 import EventStatisticsCharts from "./EventStatisticsCharts";
+import StartupConnectionProgressModal from "./startup-connection/progress/StartupConnectionProgressModal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
@@ -255,6 +256,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
   const [eventForm, setEventForm] = useState({ ...EMPTY_EVENT_FORM });
 
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [progressEvent, setProgressEvent] = useState(null);
 
   const [showParticipantModal, setShowParticipantModal] = useState(false);
   const [participantSaving, setParticipantSaving] = useState(false);
@@ -1618,6 +1620,13 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setProgressEvent(item)}
+                          className="rounded-lg border border-violet-200 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                        >
+                          Cập nhật tiến độ
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleViewEvent(item)}
@@ -3296,6 +3305,13 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
             </form>
           </div>
         </div>
+      )}
+      {progressEvent && (
+        <StartupConnectionProgressModal
+          key={progressEvent.id}
+          event={progressEvent}
+          onClose={() => setProgressEvent(null)}
+        />
       )}
       <EventStatisticsCharts
         open={showCharts}

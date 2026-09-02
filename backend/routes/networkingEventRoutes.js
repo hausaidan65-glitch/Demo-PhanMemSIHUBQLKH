@@ -17,6 +17,9 @@ const {
   addParticipant,
   deleteParticipant,
 } = require("../controllers/networkingEventController");
+const NetworkingEventProgressController = require(
+  "../controllers/networkingEventProgressController",
+);
 const AuthMiddleware = require("../middleware/authMiddleware");
 
 const RoleMiddleware = require("../middleware/roleMiddleware");
@@ -34,6 +37,22 @@ router.get("/filter-options", getFilterOptions);
 router.get("/statistics", verifyToken, allowAdmin, allowEvent, getStatistics);
 
 router.get("/export", verifyToken, allowAdmin, allowEvent, exportEvents);
+
+router.get(
+  "/:eventId/progress",
+  verifyToken,
+  allowAdmin,
+  allowEvent,
+  NetworkingEventProgressController.index,
+);
+
+router.post(
+  "/:eventId/progress",
+  verifyToken,
+  allowAdmin,
+  allowEvent,
+  NetworkingEventProgressController.store,
+);
 
 router.get("/:id", getEventById);
 router.post("/:id/register", registerPublic);

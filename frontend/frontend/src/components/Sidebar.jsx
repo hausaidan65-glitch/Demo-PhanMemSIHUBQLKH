@@ -267,9 +267,11 @@ export default function Sidebar({ open, onClose }) {
               {/* BẤM PHẦN NÀY → VÀO TRANG KHÓA ĐÀO TẠO */}
               <button
                 type="button"
-                onClick={() =>
-                  setTrainingOpen((previous) => !previous)
-                }
+                onClick={() => {
+                  setTrainingOpen(true);
+                  navigate("/admin/courses");
+                  onClose();
+                }}
                 className="
         flex
         min-w-0

@@ -1,4 +1,5 @@
 import EventStatisticsCharts from "./EventStatisticsCharts";
+import NetworkingProgressModal from "./networking/progress/NetworkingProgressModal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import axios from "axios";
@@ -251,6 +252,7 @@ export default function NetworkingEventManagement() {
   const [transferLoading, setTransferLoading] = useState(false);
   // DETAIL
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [progressEvent, setProgressEvent] = useState(null);
   const [selectedParticipantDetail, setSelectedParticipantDetail] =
     useState(null);
   const [participantListSearch, setParticipantListSearch] = useState("");
@@ -1459,6 +1461,13 @@ export default function NetworkingEventManagement() {
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
+                          onClick={() => setProgressEvent(item)}
+                          className="rounded-lg border border-violet-200 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                        >
+                          Cập nhật tiến độ
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleViewEvent(item)}
                           className="rounded-lg border border-blue-200 p-2 text-blue-600 hover:bg-blue-50"
                         >
@@ -2469,6 +2478,13 @@ export default function NetworkingEventManagement() {
             </form>
           </div>
         </div>
+      )}
+      {progressEvent && (
+        <NetworkingProgressModal
+          key={progressEvent.id}
+          event={progressEvent}
+          onClose={() => setProgressEvent(null)}
+        />
       )}
       <EventStatisticsCharts
         open={showCharts}
