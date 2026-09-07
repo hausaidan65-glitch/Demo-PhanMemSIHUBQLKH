@@ -1,7 +1,3 @@
-import axios from "axios";
+import apiClient from "./apiClient";
 
-const API = axios.create({
-  baseURL: "http://localhost:5000/api",
-});
-
-export const getDashboard = () => API.get("/dashboard");
+export const getDashboard = () => apiClient.get("/dashboard");

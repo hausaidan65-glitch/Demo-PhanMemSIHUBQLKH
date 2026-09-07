@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, Loader2 } from "lucide-react";
+import { Download, Eye, Loader2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import courseReportApi from "../../../services/courseReportApi";
 import CourseReportFilters from "./CourseReportFilters";
+import {
+  getDefaultIsoWeek,
+  formatReportPeriodLabel,
+  isValidIsoWeek,
+} from "../reportPeriodUtils";
 
 const currentYear = String(new Date().getFullYear());
 
@@ -12,6 +17,7 @@ const INITIAL_FILTERS = {
   periodType: "YEAR",
   quarter: "",
   month: "",
+  week: "",
   selectedCourseId: "",
   selectedOpeningId: "",
 };
@@ -20,25 +26,45 @@ function getFiltersFromSearch(searchParams) {
   const year = searchParams.get("year");
   const quarter = searchParams.get("quarter");
   const month = searchParams.get("month");
+  const week = searchParams.get("week");
   const validYear = /^\d{4}$/.test(year || "") ? year : currentYear;
 
-  if (/^[1-4]$/.test(quarter || "") && month === null) {
+  if (/^[1-4]$/.test(quarter || "") && month === null && week === null) {
     return {
       year: validYear,
       periodType: "QUARTER",
       quarter,
       month: "",
+      week: "",
       selectedCourseId: "",
       selectedOpeningId: "",
     };
   }
 
-  if (/^(?:[1-9]|1[0-2])$/.test(month || "") && quarter === null) {
+  if (/^(?:[1-9]|1[0-2])$/.test(month || "") && quarter === null && week === null) {
     return {
       year: validYear,
       periodType: "MONTH",
       quarter: "",
       month,
+      week: "",
+      selectedCourseId: "",
+      selectedOpeningId: "",
+    };
+  }
+
+  if (
+    /^\d+$/.test(week || "") &&
+    quarter === null &&
+    month === null &&
+    isValidIsoWeek(Number(validYear), Number(week))
+  ) {
+    return {
+      year: validYear,
+      periodType: "WEEK",
+      quarter: "",
+      month: "",
+      week,
       selectedCourseId: "",
       selectedOpeningId: "",
     };
@@ -81,6 +107,14 @@ function buildPeriodParams(filters) {
     return { year, month: Number(filters.month) };
   }
 
+  if (filters.periodType === "WEEK") {
+    const week = Number(filters.week);
+    if (!isValidIsoWeek(year, week)) {
+      throw new Error("Vui lòng chọn tuần ISO hợp lệ.");
+    }
+    return { year, week };
+  }
+
   return { year };
 }
 
@@ -105,6 +139,10 @@ function buildPeriodSearch(period) {
     params.set("month", String(period.month));
   }
 
+  if (period.type === "WEEK" && period.week) {
+    params.set("week", String(period.week));
+  }
+
   return params.toString();
 }
 
@@ -121,7 +159,34 @@ function getPeriodParams(period) {
     return { year: period.year, month: period.month };
   }
 
+  if (period.type === "WEEK") {
+    return { year: period.year, week: period.week };
+  }
+
   return { year: period.year };
+}
+
+function getDownloadFilename(contentDisposition) {
+  const match = String(contentDisposition || "").match(
+    /filename\s*=\s*(?:"([^"]+)"|([^;\s]+))/i,
+  );
+  return (
+    String(match?.[1] || match?.[2] || "").trim() ||
+    "SIHUB_Training_Report.xlsx"
+  );
+}
+
+async function getExportErrorMessage(error) {
+  const errorData = error.response?.data;
+  if (errorData instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await errorData.text());
+      if (parsed?.message) return parsed.message;
+    } catch {
+      return "Không thể xuất báo cáo đào tạo. Vui lòng thử lại.";
+    }
+  }
+  return errorData?.message || "Không thể xuất báo cáo đào tạo. Vui lòng thử lại.";
 }
 
 export default function CourseReportSection() {
@@ -138,6 +203,8 @@ export default function CourseReportSection() {
   const [openingsError, setOpeningsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const requestIdRef = useRef(0);
   const openingsRequestIdRef = useRef(0);
 
@@ -216,6 +283,14 @@ export default function CourseReportSection() {
     setFilters((previous) => ({
       ...previous,
       [name]: value,
+      week:
+        name === "year" && previous.periodType === "WEEK"
+          ? String(
+              isValidIsoWeek(Number(value), Number(previous.week))
+                ? previous.week
+                : getDefaultIsoWeek(Number(value)),
+            )
+          : previous.week,
       selectedCourseId: "",
       selectedOpeningId: "",
     }));
@@ -231,6 +306,10 @@ export default function CourseReportSection() {
       periodType,
       quarter: periodType === "QUARTER" ? previous.quarter : "",
       month: periodType === "MONTH" ? previous.month : "",
+      week:
+        periodType === "WEEK"
+          ? previous.week || String(getDefaultIsoWeek(Number(previous.year)))
+          : "",
       selectedCourseId: "",
       selectedOpeningId: "",
     }));
@@ -365,6 +444,36 @@ export default function CourseReportSection() {
     );
   };
 
+  const handleExportSummary = async () => {
+    const params = getPeriodParams(period);
+    if (!params || exporting) return;
+
+    setExporting(true);
+    setExportError("");
+    try {
+      const response = await courseReportApi.exportSummary(params);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getDownloadFilename(
+        response.headers?.["content-disposition"],
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setExportError(await getExportErrorMessage(requestError));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const allCourses = programGroups.flatMap((group) => group.courses);
   const filteredProgramGroups = filters.selectedCourseId
     ? programGroups
@@ -390,14 +499,29 @@ export default function CourseReportSection() {
 
   return (
     <section className="space-y-5 rounded-3xl border border-green-100 bg-green-50/40 p-5 shadow-sm">
-      <div>
-        <h3 className="text-xl font-bold text-slate-900">
-          Báo cáo khóa đào tạo
-        </h3>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-xl font-bold text-slate-900">
+            Báo cáo khóa đào tạo
+          </h3>
 
-        <p className="mt-1 text-sm text-slate-500">
-          Tổng hợp theo thời gian tổ chức chính thức của lớp / đợt tổ chức.
-        </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Tổng hợp theo thời gian tổ chức chính thức của lớp / đợt tổ chức.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={loading || !period || exporting}
+          onClick={handleExportSummary}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exporting ? (
+            <Loader2 size={17} className="animate-spin" />
+          ) : (
+            <Download size={17} />
+          )}
+          {exporting ? "Đang xuất..." : "Xuất báo cáo Excel"}
+        </button>
       </div>
 
       <CourseReportFilters
@@ -436,6 +560,12 @@ export default function CourseReportSection() {
         </div>
       )}
 
+      {exportError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportError}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
           <div className="text-center">
@@ -452,7 +582,7 @@ export default function CourseReportSection() {
         <>
           {period && (
             <p className="text-sm text-slate-500">
-              Kỳ dữ liệu: {formatDate(period.report_start)} đến{" "}
+              Kỳ báo cáo: {formatReportPeriodLabel(period)} — {formatDate(period.report_start)} đến{" "}
               {formatDate(period.report_end)}
             </p>
           )}

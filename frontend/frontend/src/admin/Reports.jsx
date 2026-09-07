@@ -2,17 +2,26 @@ import { useSearchParams } from "react-router-dom";
 
 import CourseReportSection from "./reports/course/CourseReportSection";
 import SeminarReportSection from "./reports/event/SeminarReportSection";
+import NetworkingReportSection from "./reports/networking/NetworkingReportSection";
+
+const REPORT_TABS = [
+  { key: "course", label: "Khóa đào tạo" },
+  { key: "seminar", label: "Hội thảo" },
+  { key: "networking", label: "Sự kiện kết nối" },
+];
 
 export default function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeReport =
-    searchParams.get("report") === "seminar" ? "seminar" : "course";
+  const reportParam = searchParams.get("report");
+  const activeReport = ["seminar", "networking"].includes(reportParam)
+    ? reportParam
+    : "course";
 
   const selectReport = (report) => {
     const nextSearch = new URLSearchParams(searchParams);
 
-    if (report === "seminar") {
-      nextSearch.set("report", "seminar");
+    if (["seminar", "networking"].includes(report)) {
+      nextSearch.set("report", report);
 
       if (!nextSearch.get("year")) {
         nextSearch.set("year", String(new Date().getFullYear()));
@@ -33,36 +42,42 @@ export default function Reports() {
         </p>
       </div>
 
-      <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-        <button
-          type="button"
-          onClick={() => selectReport("course")}
-          className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
-            activeReport === "course"
-              ? "bg-green-600 text-white"
-              : "text-slate-600 hover:bg-slate-50"
-          }`}
+      <div className="overflow-x-auto pb-1">
+        <div
+          role="tablist"
+          aria-label="Loại báo cáo"
+          className="inline-flex min-w-max rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
         >
-          Khóa đào tạo
-        </button>
-        <button
-          type="button"
-          onClick={() => selectReport("seminar")}
-          className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
-            activeReport === "seminar"
-              ? "bg-green-600 text-white"
-              : "text-slate-600 hover:bg-slate-50"
-          }`}
-        >
-          Hội thảo
-        </button>
+          {REPORT_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              id={`report-tab-${tab.key}`}
+              type="button"
+              role="tab"
+              aria-selected={activeReport === tab.key}
+              aria-controls={`report-panel-${tab.key}`}
+              onClick={() => selectReport(tab.key)}
+              className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:px-5 ${
+                activeReport === tab.key
+                  ? "bg-green-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {activeReport === "course" ? (
-        <CourseReportSection />
-      ) : (
-        <SeminarReportSection />
-      )}
+      <div
+        id={`report-panel-${activeReport}`}
+        role="tabpanel"
+        aria-labelledby={`report-tab-${activeReport}`}
+      >
+        {activeReport === "course" && <CourseReportSection />}
+        {activeReport === "seminar" && <SeminarReportSection />}
+        {activeReport === "networking" && <NetworkingReportSection />}
+      </div>
     </div>
   );
 }

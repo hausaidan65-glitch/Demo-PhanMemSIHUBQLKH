@@ -1,6 +1,12 @@
 const NetworkingEventProgressModel = require(
   "../models/networkingEventProgressModel",
 );
+const {
+  PROGRESS_TYPES,
+  cleanupFiles,
+  createProgressWithAttachments,
+  hydrateHistory,
+} = require("../services/progressAttachmentService");
 
 class NetworkingEventProgressController {
   static validationError(message) {
@@ -76,7 +82,10 @@ class NetworkingEventProgressController {
         });
       }
 
-      const history = await NetworkingEventProgressModel.getHistory(eventId);
+      const history = await hydrateHistory(
+        PROGRESS_TYPES.NETWORKING,
+        await NetworkingEventProgressModel.getHistory(eventId),
+      );
 
       return res.json({
         success: true,
@@ -105,6 +114,7 @@ class NetworkingEventProgressController {
       const event = await NetworkingEventProgressModel.findEventById(eventId);
 
       if (!event) {
+        await cleanupFiles(req.files);
         return res.status(404).json({
           success: false,
           message: "Không tìm thấy sự kiện kết nối.",
@@ -114,17 +124,27 @@ class NetworkingEventProgressController {
       const createdBy = Number(req.admin?.id);
 
       if (!Number.isSafeInteger(createdBy) || createdBy <= 0) {
+        await cleanupFiles(req.files);
         return res.status(401).json({
           success: false,
           message: "Thông tin quản trị viên không hợp lệ.",
         });
       }
 
-      const progress = await NetworkingEventProgressModel.createProgress({
-        eventId,
-        content: payload.content,
-        note: payload.note,
-        createdBy,
+      const progress = await createProgressWithAttachments({
+        progressType: PROGRESS_TYPES.NETWORKING,
+        files: req.files,
+        uploadedBy: createdBy,
+        createProgress: (connection) =>
+          NetworkingEventProgressModel.createProgress(
+            {
+              eventId,
+              content: payload.content,
+              note: payload.note,
+              createdBy,
+            },
+            connection,
+          ),
       });
 
       return res.status(201).json({
@@ -136,6 +156,7 @@ class NetworkingEventProgressController {
         },
       });
     } catch (error) {
+      await cleanupFiles(req.files);
       return NetworkingEventProgressController.handleError(
         res,
         error,

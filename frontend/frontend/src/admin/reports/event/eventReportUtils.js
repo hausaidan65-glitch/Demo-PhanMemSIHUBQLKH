@@ -1,3 +1,5 @@
+import { isValidIsoWeek } from "../reportPeriodUtils";
+
 export const currentYear = String(new Date().getFullYear());
 
 export function parsePositiveInteger(value) {
@@ -19,16 +21,26 @@ export function getPeriodFilters(searchParams) {
       : currentYear;
   const quarter = searchParams.get("quarter");
   const month = searchParams.get("month");
+  const week = searchParams.get("week");
 
-  if (/^[1-4]$/.test(quarter || "") && month === null) {
-    return { year, periodType: "QUARTER", quarter, month: "" };
+  if (/^[1-4]$/.test(quarter || "") && month === null && week === null) {
+    return { year, periodType: "QUARTER", quarter, month: "", week: "" };
   }
 
-  if (/^(?:[1-9]|1[0-2])$/.test(month || "") && quarter === null) {
-    return { year, periodType: "MONTH", quarter: "", month };
+  if (/^(?:[1-9]|1[0-2])$/.test(month || "") && quarter === null && week === null) {
+    return { year, periodType: "MONTH", quarter: "", month, week: "" };
   }
 
-  return { year, periodType: "YEAR", quarter: "", month: "" };
+  if (
+    /^\d+$/.test(week || "") &&
+    quarter === null &&
+    month === null &&
+    isValidIsoWeek(Number(year), Number(week))
+  ) {
+    return { year, periodType: "WEEK", quarter: "", month: "", week };
+  }
+
+  return { year, periodType: "YEAR", quarter: "", month: "", week: "" };
 }
 
 export function buildPeriodParams(filters) {
@@ -58,6 +70,14 @@ export function buildPeriodParams(filters) {
     return { year, month };
   }
 
+  if (filters.periodType === "WEEK") {
+    const week = Number(filters.week);
+    if (!isValidIsoWeek(year, week)) {
+      throw new Error("Vui lòng chọn tuần ISO hợp lệ.");
+    }
+    return { year, week };
+  }
+
   return { year };
 }
 
@@ -73,6 +93,10 @@ export function buildSeminarSearch(params) {
 
   if (params.month) {
     search.set("month", String(params.month));
+  }
+
+  if (params.week) {
+    search.set("week", String(params.week));
   }
 
   return search.toString();

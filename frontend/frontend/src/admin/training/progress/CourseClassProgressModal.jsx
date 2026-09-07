@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 
 import courseClassProgressApi from '../../../services/courseClassProgressApi';
+import ProgressAttachmentPicker from '../../progress/ProgressAttachmentPicker';
 import CourseClassProgressHistory from './CourseClassProgressHistory';
 
 function getBusinessErrorMessage(requestError, fallbackMessage) {
@@ -15,6 +16,7 @@ function getBusinessErrorMessage(requestError, fallbackMessage) {
 export default function CourseClassProgressModal({ opening, onClose }) {
   const [content, setContent] = useState('');
   const [note, setNote] = useState('');
+  const [files, setFiles] = useState([]);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,7 +70,7 @@ export default function CourseClassProgressModal({ opening, onClose }) {
     try {
       const response = await courseClassProgressApi.createCourseClassProgress(
         opening.id,
-        { content: trimmedContent, note: note.trim() || null },
+        { content: trimmedContent, note: note.trim() || null, files },
       );
       const createdProgress = response.data?.data?.progress;
 
@@ -78,6 +80,7 @@ export default function CourseClassProgressModal({ opening, onClose }) {
 
       setContent('');
       setNote('');
+      setFiles([]);
       setSuccessMessage(
         response.data?.message || 'Cập nhật tiến độ thành công.',
       );
@@ -162,6 +165,12 @@ export default function CourseClassProgressModal({ opening, onClose }) {
                 className="w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-green-500 focus:ring-4 focus:ring-green-100 disabled:bg-slate-100"
               />
             </div>
+
+            <ProgressAttachmentPicker
+              files={files}
+              onChange={setFiles}
+              disabled={saving}
+            />
 
             {saveError && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

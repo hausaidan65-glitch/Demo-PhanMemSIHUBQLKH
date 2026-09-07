@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import { createProgressPayload } from './progressPayload';
 
 const courseClassProgressApi = {
   getCourseClassProgress(openingId) {
@@ -6,7 +7,10 @@ const courseClassProgressApi = {
   },
 
   createCourseClassProgress(openingId, payload) {
-    return apiClient.post(`/course-classes/${openingId}/progress`, payload);
+    return apiClient.post(
+      `/course-classes/${openingId}/progress`,
+      createProgressPayload(payload),
+    );
   },
 };
 

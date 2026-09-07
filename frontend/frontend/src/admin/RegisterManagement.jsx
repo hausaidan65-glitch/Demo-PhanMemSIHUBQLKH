@@ -1,5 +1,7 @@
 import RegistrationCharts from "./RegistrationCharts";
 import ImportStudentModal from "./components/ImportStudentModal";
+import RegistrationFilterChips from "./registrations/filters/RegistrationFilterChips";
+import RegistrationMultiSelect from "./registrations/filters/RegistrationMultiSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -120,74 +122,6 @@ function getUserTypeLabel(type) {
   };
 
   return labels[type] || type || "—";
-}
-
-function MultiSelect({
-  label,
-  values,
-  options,
-  onChange,
-  getOptionValue = (option) => option,
-  getOptionLabel = (option) => option,
-}) {
-  const handleChange = (event) => {
-    const selectedValues = Array.from(event.target.selectedOptions).map(
-      (option) => option.value,
-    );
-
-    onChange(selectedValues);
-  };
-
-  return (
-    <div>
-      <label
-        className="
-          mb-2
-          block
-          text-sm
-          font-medium
-          text-slate-700
-        "
-      >
-        {label}
-      </label>
-
-      <select
-        multiple
-        value={values.map(String)}
-        onChange={handleChange}
-        className="
-          min-h-28
-          w-full
-          rounded-xl
-          border
-          border-slate-200
-          bg-white
-          px-3
-          py-2
-          text-sm
-          outline-none
-          focus:border-green-500
-          focus:ring-4
-          focus:ring-green-100
-        "
-      >
-        {options.map((option) => {
-          const value = getOptionValue(option);
-
-          return (
-            <option key={String(value)} value={String(value)}>
-              {getOptionLabel(option)}
-            </option>
-          );
-        })}
-      </select>
-
-      <p className="mt-1 text-xs text-slate-400">
-        Giữ Ctrl để chọn nhiều giá trị
-      </p>
-    </div>
-  );
 }
 
 export default function RegisterManagement() {
@@ -645,8 +579,8 @@ export default function RegisterManagement() {
     }
   };
 
-  const activeFilterCount = useMemo(() => {
-    let total = keyword ? 1 : 0;
+  const advancedFilterCount = useMemo(() => {
+    let total = 0;
 
     Object.entries(filters).forEach(([key, value]) => {
       // Sắp xếp mặc định không tính là bộ lọc
@@ -668,7 +602,173 @@ export default function RegisterManagement() {
     });
 
     return total;
-  }, [filters, keyword]);
+  }, [filters]);
+
+  const activeFilterCount = advancedFilterCount + (keyword ? 1 : 0);
+
+  const summarizeValues = (values, getLabel = (value) => value) => {
+    const labels = values.map(getLabel);
+    return `${labels.slice(0, 2).join(", ")}${
+      labels.length > 2 ? ` +${labels.length - 2}` : ""
+    }`;
+  };
+
+  const findOptionName = (options, value) =>
+    options.find((item) => String(item.id) === String(value))?.name || value;
+
+  const activeFilterChips = [];
+  const addFilterChip = (key, name, value, onRemove) => {
+    if (value === "" || (Array.isArray(value) && value.length === 0)) {
+      return;
+    }
+
+    activeFilterChips.push({ key, name, label: `${name}: ${value}`, onRemove });
+  };
+  const clearFilterGroup = (key) =>
+    updateFilter(key, Array.isArray(filters[key]) ? [] : "");
+
+  addFilterChip("keyword", "Tìm kiếm", keyword, () => {
+    setKeyword("");
+    setSearchInput("");
+    setPage(1);
+  });
+  addFilterChip(
+    "user_types",
+    "Nhóm đối tượng",
+    filters.user_types.length
+      ? summarizeValues(filters.user_types, getUserTypeLabel)
+      : "",
+    () => clearFilterGroup("user_types"),
+  );
+  addFilterChip(
+    "genders",
+    "Giới tính",
+    filters.genders.length
+      ? summarizeValues(filters.genders, getGenderLabel)
+      : "",
+    () => clearFilterGroup("genders"),
+  );
+  addFilterChip(
+    "age_groups",
+    "Nhóm tuổi",
+    filters.age_groups.length ? summarizeValues(filters.age_groups) : "",
+    () => clearFilterGroup("age_groups"),
+  );
+  addFilterChip(
+    "companies",
+    "Đơn vị",
+    filters.companies.length ? summarizeValues(filters.companies) : "",
+    () => clearFilterGroup("companies"),
+  );
+  addFilterChip(
+    "project_fields",
+    "Lĩnh vực dự án",
+    filters.project_fields.length
+      ? summarizeValues(filters.project_fields)
+      : "",
+    () => clearFilterGroup("project_fields"),
+  );
+  addFilterChip(
+    "startup_stages",
+    "Giai đoạn Startup",
+    filters.startup_stages.length
+      ? summarizeValues(filters.startup_stages)
+      : "",
+    () => clearFilterGroup("startup_stages"),
+  );
+  addFilterChip(
+    "training_course_id",
+    "Khóa đào tạo",
+    filters.training_course_id
+      ? findOptionName(filterOptions.training_courses, filters.training_course_id)
+      : "",
+    () => {
+      setFilters((previous) => ({
+        ...previous,
+        training_course_id: "",
+        course_id: "",
+        class_id: "",
+      }));
+      setPage(1);
+    },
+  );
+  addFilterChip(
+    "course_id",
+    "Lớp học",
+    filters.course_id
+      ? findOptionName(filterOptions.classes, filters.course_id)
+      : "",
+    () => {
+      setFilters((previous) => ({
+        ...previous,
+        course_id: "",
+        class_id: "",
+      }));
+      setPage(1);
+    },
+  );
+  addFilterChip(
+    "class_id",
+    "Đợt tổ chức",
+    filters.class_id
+      ? findOptionName(filterOptions.openings, filters.class_id)
+      : "",
+    () => clearFilterGroup("class_id"),
+  );
+  addFilterChip(
+    "statuses",
+    "Trạng thái đăng ký",
+    filters.statuses.length
+      ? summarizeValues(filters.statuses, getStatusLabel)
+      : "",
+    () => clearFilterGroup("statuses"),
+  );
+  addFilterChip(
+    "female_founder",
+    "Nữ Founder/Co-founder",
+    filters.female_founder === "1"
+      ? "Có"
+      : filters.female_founder === "0"
+        ? "Không"
+        : "",
+    () => clearFilterGroup("female_founder"),
+  );
+  addFilterChip(
+    "has_project",
+    "Dự án",
+    filters.has_project === "1"
+      ? "Có dự án"
+      : filters.has_project === "0"
+        ? "Chưa có dự án"
+        : "",
+    () => clearFilterGroup("has_project"),
+  );
+  addFilterChip("mission", "Nhiệm vụ", filters.mission, () =>
+    clearFilterGroup("mission"),
+  );
+  addFilterChip(
+    "checked_in",
+    "Check-in",
+    filters.checked_in === "1"
+      ? "Đã check-in"
+      : filters.checked_in === "0"
+        ? "Chưa check-in"
+        : "",
+    () => clearFilterGroup("checked_in"),
+  );
+  addFilterChip("year", "Năm", filters.year, () => {
+    setFilters((previous) => ({ ...previous, year: "", month: "" }));
+    setPage(1);
+  });
+  addFilterChip("month", "Tháng", filters.month, () =>
+    clearFilterGroup("month"),
+  );
+  addFilterChip("date_from", "Từ ngày", filters.date_from, () =>
+    clearFilterGroup("date_from"),
+  );
+  addFilterChip("date_to", "Đến ngày", filters.date_to, () =>
+    clearFilterGroup("date_to"),
+  );
 
   const startItem = pagination.total === 0 ? 0 : (page - 1) * limit + 1;
 
@@ -874,7 +974,7 @@ export default function RegisterManagement() {
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Tìm tên, email, số điện thoại, đơn vị, khóa đào tạo, lớp học..."
+              placeholder="Tìm theo tên, email, số điện thoại, đơn vị, khóa/lớp..."
               className="
                 w-full
                 bg-transparent
@@ -924,7 +1024,7 @@ export default function RegisterManagement() {
           >
             <SlidersHorizontal size={18} />
             Bộ lọc nâng cao
-            {activeFilterCount > 0 && (
+            {advancedFilterCount > 0 && (
               <span
                 className="
                   rounded-full
@@ -936,7 +1036,7 @@ export default function RegisterManagement() {
                   text-green-700
                 "
               >
-                {activeFilterCount}
+                {advancedFilterCount}
               </span>
             )}
           </button>
@@ -979,19 +1079,20 @@ export default function RegisterManagement() {
             <div
               className="
                 grid
-                gap-5
+                gap-x-4
+                gap-y-4
                 md:grid-cols-2
                 xl:grid-cols-3
               "
             >
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Nhóm tuổi"
                 values={filters.age_groups}
                 options={filterOptions.age_groups}
                 onChange={(value) => updateFilter("age_groups", value)}
               />
 
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Giới tính"
                 values={filters.genders}
                 options={filterOptions.genders}
@@ -999,14 +1100,15 @@ export default function RegisterManagement() {
                 onChange={(value) => updateFilter("genders", value)}
               />
 
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Đơn vị"
                 values={filters.companies}
                 options={filterOptions.companies}
+                searchPlaceholder="Tìm theo tên đơn vị..."
                 onChange={(value) => updateFilter("companies", value)}
               />
 
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Nhóm đối tượng"
                 values={filters.user_types}
                 options={filterOptions.user_types}
@@ -1014,14 +1116,14 @@ export default function RegisterManagement() {
                 onChange={(value) => updateFilter("user_types", value)}
               />
 
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Lĩnh vực dự án"
                 values={filters.project_fields}
                 options={filterOptions.project_fields}
                 onChange={(value) => updateFilter("project_fields", value)}
               />
 
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Giai đoạn Startup"
                 values={filters.startup_stages}
                 options={filterOptions.startup_stages}
@@ -1156,7 +1258,7 @@ export default function RegisterManagement() {
                   ))}
                 </select>
               </div>
-              <MultiSelect
+              <RegistrationMultiSelect
                 label="Trạng thái đăng ký"
                 values={filters.statuses}
                 options={filterOptions.registration_statuses}
@@ -1445,6 +1547,11 @@ export default function RegisterManagement() {
             </div>
           </div>
         )}
+
+        <RegistrationFilterChips
+          chips={activeFilterChips}
+          onClearAll={handleResetFilters}
+        />
       </div>
 
       {/* STUDENT TABLE */}

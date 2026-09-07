@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Loader2 } from "lucide-react";
+import { Download, Eye, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import eventReportApi from "../../../services/eventReportApi";
 import SeminarListFilters from "./SeminarListFilters";
+import SeminarListExportFieldSelector from "./SeminarListExportFieldSelector";
 import SeminarReportFilters from "./SeminarReportFilters.jsx";
 import {
+  buildSeminarListExportParams,
   filterSeminars,
   getParentFilterOptions,
   getRawFilterOptions,
   INITIAL_SEMINAR_LIST_FILTERS,
+  hasActiveSeminarListFilter,
 } from "./seminarReportFilters";
+import { DEFAULT_SEMINAR_LIST_EXPORT_FIELDS } from "./seminarListExportFields";
 import {
   buildPeriodParams,
   buildSeminarSearch,
@@ -22,6 +26,11 @@ import {
   getPeriodFilters,
   getStatusLabel,
 } from "./eventReportUtils";
+import {
+  formatReportPeriodLabel,
+  getDefaultIsoWeek,
+  isValidIsoWeek,
+} from "../reportPeriodUtils";
 
 const SUMMARY_ITEMS = [
   { key: "total_seminars", label: "Tổng hội thảo" },
@@ -46,6 +55,35 @@ const GROUP_LABELS = {
   checked_in: "Check-in",
 };
 
+const DEFAULT_EXPORT_FILENAME = "SIHUB_Seminar_Report.xlsx";
+
+function getExportPeriodParams(period) {
+  if (!period) return null;
+  const params = { year: Number(period.year) };
+  if (period.type === "QUARTER") params.quarter = Number(period.quarter);
+  if (period.type === "MONTH") params.month = Number(period.month);
+  if (period.type === "WEEK") params.week = Number(period.week);
+  return params;
+}
+
+function getDownloadFilename(contentDisposition) {
+  const match = String(contentDisposition || "").match(/filename="?([^";]+)"?/i);
+  return match?.[1] || DEFAULT_EXPORT_FILENAME;
+}
+
+async function getExportErrorMessage(error) {
+  const data = error.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const payload = JSON.parse(await data.text());
+      if (payload?.message) return payload.message;
+    } catch {
+      // Fall through to the friendly default below.
+    }
+  }
+  return data?.message || "Không thể xuất báo cáo Excel. Vui lòng thử lại.";
+}
+
 export default function SeminarReportSection() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -60,6 +98,12 @@ export default function SeminarReportSection() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportingListScope, setExportingListScope] = useState("");
+  const [selectedListExportFields, setSelectedListExportFields] = useState(
+    DEFAULT_SEMINAR_LIST_EXPORT_FIELDS,
+  );
+  const [exportError, setExportError] = useState("");
   const requestIdRef = useRef(0);
 
   const loadReport = useCallback(async (params) => {
@@ -120,7 +164,18 @@ export default function SeminarReportSection() {
   }, [loadReport, searchParams]);
 
   const updateFilter = (name, value) => {
-    setFilters((previous) => ({ ...previous, [name]: value }));
+    setFilters((previous) => ({
+      ...previous,
+      [name]: value,
+      week:
+        name === "year" && previous.periodType === "WEEK"
+          ? String(
+              isValidIsoWeek(Number(value), Number(previous.week))
+                ? previous.week
+                : getDefaultIsoWeek(Number(value)),
+            )
+          : previous.week,
+    }));
   };
 
   const changePeriodType = (periodType) => {
@@ -129,6 +184,10 @@ export default function SeminarReportSection() {
       periodType,
       quarter: periodType === "QUARTER" ? previous.quarter : "",
       month: periodType === "MONTH" ? previous.month : "",
+      week:
+        periodType === "WEEK"
+          ? previous.week || String(getDefaultIsoWeek(Number(previous.year)))
+          : "",
     }));
   };
 
@@ -158,6 +217,7 @@ export default function SeminarReportSection() {
       periodType: "YEAR",
       quarter: "",
       month: "",
+      week: "",
     };
 
     setFilters(nextFilters);
@@ -169,6 +229,7 @@ export default function SeminarReportSection() {
         year: period.year,
         quarter: period.type === "QUARTER" ? period.quarter : null,
         month: period.type === "MONTH" ? period.month : null,
+        week: period.type === "WEEK" ? period.week : null,
       })
     : buildSeminarSearch(buildPeriodParams(getPeriodFilters(searchParams)));
 
@@ -189,18 +250,92 @@ export default function SeminarReportSection() {
     () => filterSeminars(seminars, listFilters),
     [listFilters, seminars],
   );
+  const hasActiveListFilter = hasActiveSeminarListFilter(listFilters);
 
   const updateListFilter = (name, value) => {
     setListFilters((previous) => ({ ...previous, [name]: value }));
   };
 
+  const handleExportSummary = async () => {
+    const params = getExportPeriodParams(period);
+    if (!params || exporting) return;
+
+    setExporting(true);
+    setExportError("");
+    try {
+      const response = await eventReportApi.exportSeminarSummary(params);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getDownloadFilename(response.headers?.["content-disposition"]);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setExportError(await getExportErrorMessage(requestError));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportSeminarList = async (scope) => {
+    const periodParams = getExportPeriodParams(period);
+    if (!periodParams || exportingListScope || !selectedListExportFields.length) return;
+
+    setExportingListScope(scope);
+    setExportError("");
+    try {
+      const params = buildSeminarListExportParams(listFilters, periodParams, scope);
+      params.fields = selectedListExportFields.join(",");
+      const response = await eventReportApi.exportSeminarList(params);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getDownloadFilename(response.headers?.["content-disposition"]);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setExportError(await getExportErrorMessage(requestError));
+    } finally {
+      setExportingListScope("");
+    }
+  };
+
   return (
     <section className="space-y-5 rounded-3xl border border-emerald-100 bg-emerald-50/40 p-5 shadow-sm">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">Báo cáo hội thảo</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Tổng hợp theo thời gian tổ chức chính thức của hội thảo.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Báo cáo hội thảo</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Tổng hợp theo thời gian tổ chức chính thức của hội thảo.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={loading || !period || exporting}
+          onClick={handleExportSummary}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exporting ? (
+            <Loader2 size={17} className="animate-spin" />
+          ) : (
+            <Download size={17} />
+          )}
+          {exporting ? "Đang xuất..." : "Xuất báo cáo Excel"}
+        </button>
       </div>
 
       <SeminarReportFilters
@@ -218,6 +353,12 @@ export default function SeminarReportSection() {
         </div>
       )}
 
+      {exportError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportError}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
           <div className="text-center">
@@ -231,7 +372,7 @@ export default function SeminarReportSection() {
         <>
           {period && (
             <p className="text-sm text-slate-500">
-              Kỳ dữ liệu: {formatDateTime(period.report_start)} đến{" "}
+              Kỳ báo cáo: {formatReportPeriodLabel(period)} — {formatDateTime(period.report_start)} đến{" "}
               {formatDateTime(period.report_end)}
             </p>
           )}
@@ -316,13 +457,46 @@ export default function SeminarReportSection() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h3 className="font-bold text-slate-900">Danh sách hội thảo</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Hiển thị {formatNumber(filteredSeminars.length)} /{" "}
-                {formatNumber(seminars.length)} hội thảo.
-              </p>
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900">Danh sách hội thảo</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {hasActiveListFilter
+                    ? `Đang hiển thị ${formatNumber(filteredSeminars.length)} / ${formatNumber(seminars.length)} hội thảo`
+                    : `${formatNumber(seminars.length)} hội thảo`}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SeminarListExportFieldSelector
+                  selectedFields={selectedListExportFields}
+                  onChange={setSelectedListExportFields}
+                />
+                <button
+                  type="button"
+                  disabled={!seminars.length || !selectedListExportFields.length || Boolean(exportingListScope)}
+                  onClick={() => handleExportSeminarList("ALL")}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingListScope === "ALL" ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  {exportingListScope === "ALL" ? "Đang xuất..." : "Xuất tất cả"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasActiveListFilter || !filteredSeminars.length || !selectedListExportFields.length || Boolean(exportingListScope)}
+                  onClick={() => handleExportSeminarList("FILTERED")}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingListScope === "FILTERED" ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+                  {exportingListScope === "FILTERED" ? "Đang xuất..." : "Xuất theo bộ lọc"}
+                </button>
+              </div>
             </div>
+
+            {!selectedListExportFields.length && (
+              <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700">
+                Vui lòng chọn ít nhất một trường để xuất.
+              </div>
+            )}
 
             <SeminarListFilters
               filters={listFilters}

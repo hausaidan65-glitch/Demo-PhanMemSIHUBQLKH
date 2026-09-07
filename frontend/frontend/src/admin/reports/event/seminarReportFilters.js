@@ -112,6 +112,21 @@ export function filterSeminars(seminars, filters) {
   });
 }
 
+export function hasActiveSeminarListFilter(filters) {
+  return Object.values(filters).some((value) => normalizedText(value) !== "");
+}
+
+export function buildSeminarListExportParams(filters, periodParams, scope) {
+  const params = { ...periodParams, scope };
+  if (scope === "FILTERED") {
+    Object.entries(filters).forEach(([name, value]) => {
+      const normalizedValue = normalizedText(value);
+      if (normalizedValue) params[name] = normalizedValue;
+    });
+  }
+  return params;
+}
+
 export function normalizeCheckIn(value) {
   if (value === true || value === 1 || value === "1") {
     return "CHECKED";
@@ -163,7 +178,7 @@ function exportFilterValue(value) {
 export function buildParticipantExportParams(filters, searchParams, scope) {
   const params = { scope };
 
-  ["year", "quarter", "month"].forEach((name) => {
+  ["year", "quarter", "month", "week"].forEach((name) => {
     const value = searchParams.get(name);
 
     if (value) {

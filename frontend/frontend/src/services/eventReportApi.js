@@ -11,6 +11,20 @@ const eventReportApi = {
     return apiClient.get(SEMINAR_REPORT_PATH, { params });
   },
 
+  exportSeminarSummary(params) {
+    return apiClient.get(`${SEMINAR_REPORT_PATH}/export`, {
+      params,
+      responseType: "blob",
+    });
+  },
+
+  exportSeminarList(params) {
+    return apiClient.get(`${SEMINAR_REPORT_PATH}/list/export`, {
+      params,
+      responseType: "blob",
+    });
+  },
+
   getSeminarParticipants(seminarId) {
     return apiClient.get(`${SEMINAR_REPORT_PATH}/${seminarId}/participants`);
   },

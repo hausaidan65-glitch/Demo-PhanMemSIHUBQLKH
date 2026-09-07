@@ -1,6 +1,12 @@
 const StartupConnectionProgressModel = require(
   "../models/startupConnectionProgressModel",
 );
+const {
+  PROGRESS_TYPES,
+  cleanupFiles,
+  createProgressWithAttachments,
+  hydrateHistory,
+} = require("../services/progressAttachmentService");
 
 class StartupConnectionProgressController {
   static validationError(message) {
@@ -77,7 +83,10 @@ class StartupConnectionProgressController {
         });
       }
 
-      const history = await StartupConnectionProgressModel.getHistory(eventId);
+      const history = await hydrateHistory(
+        PROGRESS_TYPES.STARTUP_CONNECTION,
+        await StartupConnectionProgressModel.getHistory(eventId),
+      );
 
       return res.json({
         success: true,
@@ -107,6 +116,7 @@ class StartupConnectionProgressController {
         await StartupConnectionProgressModel.findSupportedEventById(eventId);
 
       if (!event) {
+        await cleanupFiles(req.files);
         return res.status(404).json({
           success: false,
           message: "Không tìm thấy Hội thảo hoặc Triển lãm.",
@@ -116,17 +126,27 @@ class StartupConnectionProgressController {
       const createdBy = Number(req.admin?.id);
 
       if (!Number.isSafeInteger(createdBy) || createdBy <= 0) {
+        await cleanupFiles(req.files);
         return res.status(401).json({
           success: false,
           message: "Thông tin quản trị viên không hợp lệ.",
         });
       }
 
-      const progress = await StartupConnectionProgressModel.createProgress({
-        eventId,
-        content: payload.content,
-        note: payload.note,
-        createdBy,
+      const progress = await createProgressWithAttachments({
+        progressType: PROGRESS_TYPES.STARTUP_CONNECTION,
+        files: req.files,
+        uploadedBy: createdBy,
+        createProgress: (connection) =>
+          StartupConnectionProgressModel.createProgress(
+            {
+              eventId,
+              content: payload.content,
+              note: payload.note,
+              createdBy,
+            },
+            connection,
+          ),
       });
 
       return res.status(201).json({
@@ -138,6 +158,7 @@ class StartupConnectionProgressController {
         },
       });
     } catch (error) {
+      await cleanupFiles(req.files);
       return StartupConnectionProgressController.handleError(
         res,
         error,

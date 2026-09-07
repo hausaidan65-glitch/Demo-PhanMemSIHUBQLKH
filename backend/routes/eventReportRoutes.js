@@ -14,6 +14,8 @@ router.use(
 );
 
 router.get("/seminars/summary", EventReportController.seminarSummary);
+router.get("/seminars/export", EventReportController.exportSeminarSummary);
+router.get("/seminars/list/export", EventReportController.exportSeminarList);
 router.get("/seminars", EventReportController.seminars);
 router.get(
   "/seminars/:seminarId/participants",

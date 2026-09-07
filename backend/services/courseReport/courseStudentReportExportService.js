@@ -1,36 +1,67 @@
 const ExcelJS = require("exceljs");
 
 const WORKSHEET_NAME = "Báo cáo học viên";
-const COLUMN_COUNT = 16;
 const HEADER_ROW_NUMBER = 14;
-
-const HEADERS = [
-  "STT",
-  "Họ và tên",
-  "Email",
-  "Số điện thoại",
-  "Giới tính",
-  "Nhóm đối tượng",
-  "Đơn vị",
-  "Chức vụ",
-  "Trạng thái đăng ký",
-  "Đã đi học",
-  "Số buổi tham dự",
-  "Tổng số buổi",
-  "Tỷ lệ tham dự (%)",
-  "Đủ điều kiện chứng nhận",
-  "Đã cấp chứng nhận",
-  "Số chứng nhận",
-];
-
-const COLUMN_WIDTHS = [
-  8, 26, 32, 18, 14, 20, 28, 24, 22, 14, 18, 16, 20, 26, 22, 22,
-];
 
 const REGISTER_STATUS_LABELS = {
   CONFIRMED: "Đã xác nhận",
   PENDING: "Chờ xác nhận",
 };
+
+const FIELD_DEFINITIONS = {
+  full_name: { label: "Họ và tên", width: 26, getValue: (student) => safeText(student.full_name) },
+  email: { label: "Email", width: 32, getValue: (student) => safeText(student.email) },
+  phone: { label: "Số điện thoại", width: 18, getValue: (student) => safeText(student.phone) },
+  gender: { label: "Giới tính", width: 14, getValue: (student) => safeText(student.gender) },
+  user_type: { label: "Nhóm đối tượng", width: 20, getValue: (student) => safeText(student.user_type) },
+  company: { label: "Đơn vị", width: 28, getValue: (student) => safeText(student.company) },
+  position: { label: "Chức vụ", width: 24, getValue: (student) => safeText(student.position) },
+  register_status: {
+    label: "Trạng thái đăng ký",
+    width: 22,
+    getValue: (student) => REGISTER_STATUS_LABELS[student.register_status] || safeText(student.register_status),
+  },
+  attended: { label: "Đã đi học", width: 14, getValue: (student) => student.attended === true ? "Có" : "Không" },
+  attended_sessions: { label: "Số buổi tham dự", width: 18, getValue: (student) => safeNumber(student.attended_sessions) },
+  total_sessions: { label: "Tổng số buổi", width: 16, getValue: (student) => safeNumber(student.total_sessions) },
+  attendance_rate: { label: "Tỷ lệ tham dự (%)", width: 20, getValue: (student) => safeNumber(student.attendance_rate) },
+  certificate_eligible: { label: "Đủ điều kiện chứng nhận", width: 26, getValue: (student) => student.certificate_eligible === true ? "Có" : "Không" },
+  certificate_issued: { label: "Đã cấp chứng nhận", width: 22, getValue: (student) => student.certificate_issued === true ? "Có" : "Không" },
+  certificate_no: { label: "Số chứng nhận", width: 22, getValue: (student) => safeText(student.certificate_no) },
+};
+
+const DEFAULT_FIELD_KEYS = Object.freeze(Object.keys(FIELD_DEFINITIONS));
+
+function fieldValidationError(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
+function parseSelectedFields(query = {}) {
+  if (!Object.prototype.hasOwnProperty.call(query, "fields")) {
+    return null;
+  }
+
+  const rawFields = Array.isArray(query.fields) ? query.fields.join(",") : query.fields;
+  const keys = String(rawFields ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+
+  if (!keys.length) {
+    throw fieldValidationError("Vui lòng chọn ít nhất một trường để xuất.");
+  }
+
+  const unknownFields = keys.filter((key) => !FIELD_DEFINITIONS[key]);
+  if (unknownFields.length) {
+    throw fieldValidationError(
+      `Trường xuất không hợp lệ: ${[...new Set(unknownFields)].join(", ")}.`,
+    );
+  }
+
+  return [...new Set(keys)];
+}
 
 const ATTENDANCE_STATUS_LABELS = {
   ATTENDED: "Đi học: Đã đi học",
@@ -107,6 +138,16 @@ function formatPeriod(period) {
     return month ? `Tháng ${month}/${year}` : "Không xác định";
   }
 
+  if (type === "WEEK") {
+    const week = safeText(period.week).trim();
+    const startDate = formatDate(period.start_date || period.report_start);
+    const endDate = formatDate(period.end_date || period.report_end);
+
+    return week && startDate && endDate
+      ? `Tuần ${week} / ${year} (${startDate} – ${endDate})`
+      : "Không xác định";
+  }
+
   return type === "YEAR" ? `Năm ${year}` : "Không xác định";
 }
 
@@ -176,14 +217,52 @@ function sanitizeFilenamePart(value) {
     .replace(/^[.-]+|[.-]+$/g, "");
 }
 
-function buildCourseStudentReportFilename(opening = {}) {
+function buildPeriodFilenamePart(period) {
+  const year = safeText(period?.year).trim();
+
+  if (!year) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  if (period.type === "QUARTER" && period.quarter) {
+    return `${year}_Q${period.quarter}`;
+  }
+
+  if (period.type === "MONTH" && period.month) {
+    return `${year}_${String(period.month).padStart(2, "0")}`;
+  }
+
+  if (period.type === "WEEK" && period.week) {
+    return `${year}_W${String(period.week).padStart(2, "0")}`;
+  }
+
+  return year;
+}
+
+function buildCourseStudentReportFilename(opening = {}, period = null) {
   const openingPart =
     sanitizeFilenamePart(opening.class_code) ||
     sanitizeFilenamePart(opening.class_name) ||
     "lop";
-  const dateText = new Date().toISOString().slice(0, 10);
+  return `SIHUB_Training_Students_${openingPart}_${buildPeriodFilenamePart(period)}.xlsx`;
+}
 
-  return `bao-cao-hoc-vien-${openingPart}-${dateText}.xlsx`;
+function buildCourseStudentReportContentDisposition(filename) {
+  const utf8Filename = safeText(filename).replace(/[\r\n]/g, "").trim() ||
+    "SIHUB_Training_Students.xlsx";
+  const asciiFilename = utf8Filename
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[Đđ]/g, (character) => (character === "Đ" ? "D" : "d"))
+    .replace(/[^\x20-\x7E]/g, "-")
+    .replace(/["\\]/g, "-")
+    .trim() || "SIHUB_Training_Students.xlsx";
+  const encodedFilename = encodeURIComponent(utf8Filename).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+  return `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 function styleMetadataRow(worksheet, rowNumber) {
@@ -200,6 +279,7 @@ function buildCourseStudentReportWorkbook({
   scope,
   filters = {},
   period = null,
+  selectedFields = null,
 } = {}) {
   if (!Array.isArray(students)) {
     throw new TypeError("Danh sách học viên export không hợp lệ.");
@@ -209,6 +289,22 @@ function buildCourseStudentReportWorkbook({
     throw new TypeError("Phạm vi export không hợp lệ.");
   }
 
+  const fieldKeys = selectedFields === null ? DEFAULT_FIELD_KEYS : selectedFields;
+
+  if (!Array.isArray(fieldKeys) || !fieldKeys.length) {
+    throw fieldValidationError("Vui lòng chọn ít nhất một trường để xuất.");
+  }
+
+  const invalidField = fieldKeys.find((key) => !FIELD_DEFINITIONS[key]);
+  if (invalidField) {
+    throw fieldValidationError(`Trường xuất không hợp lệ: ${invalidField}.`);
+  }
+
+  const columns = [
+    { label: "STT", width: 8, getValue: (_student, index) => index + 1 },
+    ...fieldKeys.map((key) => FIELD_DEFINITIONS[key]),
+  ];
+  const columnCount = columns.length;
   const workbook = new ExcelJS.Workbook();
 
   workbook.creator = "SIHUB";
@@ -216,11 +312,11 @@ function buildCourseStudentReportWorkbook({
 
   const worksheet = workbook.addWorksheet(WORKSHEET_NAME);
 
-  COLUMN_WIDTHS.forEach((width, index) => {
-    worksheet.getColumn(index + 1).width = width;
+  columns.forEach((column, index) => {
+    worksheet.getColumn(index + 1).width = column.width;
   });
 
-  worksheet.mergeCells(1, 1, 1, COLUMN_COUNT);
+  worksheet.mergeCells(1, 1, 1, columnCount);
   const titleCell = worksheet.getCell(1, 1);
 
   titleCell.value = "BÁO CÁO HỌC VIÊN THEO LỚP";
@@ -248,13 +344,13 @@ function buildCourseStudentReportWorkbook({
     const rowNumber = index + 3;
 
     worksheet.getRow(rowNumber).values = values;
-    worksheet.mergeCells(rowNumber, 2, rowNumber, COLUMN_COUNT);
+    worksheet.mergeCells(rowNumber, 2, rowNumber, columnCount);
     styleMetadataRow(worksheet, rowNumber);
   });
 
   const headerRow = worksheet.getRow(HEADER_ROW_NUMBER);
 
-  headerRow.values = HEADERS;
+  headerRow.values = columns.map((column) => column.label);
   headerRow.font = { bold: true };
   headerRow.alignment = {
     horizontal: "center",
@@ -264,25 +360,9 @@ function buildCourseStudentReportWorkbook({
   headerRow.height = 30;
 
   students.forEach((student, index) => {
-    const row = worksheet.addRow([
-      index + 1,
-      safeText(student.full_name),
-      safeText(student.email),
-      safeText(student.phone),
-      safeText(student.gender),
-      safeText(student.user_type),
-      safeText(student.company),
-      safeText(student.position),
-      REGISTER_STATUS_LABELS[student.register_status] ||
-        safeText(student.register_status),
-      student.attended === true ? "Có" : "Không",
-      safeNumber(student.attended_sessions),
-      safeNumber(student.total_sessions),
-      safeNumber(student.attendance_rate),
-      student.certificate_eligible === true ? "Có" : "Không",
-      student.certificate_issued === true ? "Có" : "Không",
-      safeText(student.certificate_no),
-    ]);
+    const row = worksheet.addRow(
+      columns.map((column) => column.getValue(student, index)),
+    );
 
     row.alignment = { vertical: "top", wrapText: true };
   });
@@ -296,7 +376,7 @@ function buildCourseStudentReportWorkbook({
   };
 
   for (let rowNumber = HEADER_ROW_NUMBER; rowNumber <= lastTableRow; rowNumber += 1) {
-    for (let column = 1; column <= COLUMN_COUNT; column += 1) {
+    for (let column = 1; column <= columnCount; column += 1) {
       worksheet.getCell(rowNumber, column).border = border;
     }
   }
@@ -304,13 +384,17 @@ function buildCourseStudentReportWorkbook({
   worksheet.views = [{ state: "frozen", ySplit: HEADER_ROW_NUMBER }];
   worksheet.autoFilter = {
     from: { row: HEADER_ROW_NUMBER, column: 1 },
-    to: { row: HEADER_ROW_NUMBER, column: COLUMN_COUNT },
+    to: { row: HEADER_ROW_NUMBER, column: columnCount },
   };
 
   return workbook;
 }
 
 module.exports = {
+  DEFAULT_FIELD_KEYS,
+  FIELD_DEFINITIONS,
+  buildCourseStudentReportContentDisposition,
   buildCourseStudentReportFilename,
   buildCourseStudentReportWorkbook,
+  parseSelectedFields,
 };

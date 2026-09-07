@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const progressAttachmentRoutes = require("./routes/progressAttachmentRoutes");
 require("dotenv").config();
 
 const categoryRoutes = require("./routes/categoryRoutes");
@@ -88,6 +89,12 @@ app.use(
 /*
  * Public uploads
  */
+app.use("/uploads/progress", (req, res) => {
+  return res.status(404).json({
+    success: false,
+    message: "Không tìm thấy tệp.",
+  });
+});
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /*
@@ -98,6 +105,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/activities", activityRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/course-classes", courseClassRoutes);
+app.use("/api/progress-attachments", progressAttachmentRoutes);
 app.use("/api/course-class-sessions", courseClassSessionRoutes);
 app.use("/api/registrations", registrationRoutes);
 app.use("/api/dashboard", dashboardRoutes);

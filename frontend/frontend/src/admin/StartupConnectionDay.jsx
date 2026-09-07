@@ -1,5 +1,7 @@
 import EventStatisticsCharts from "./EventStatisticsCharts";
 import StartupConnectionProgressModal from "./startup-connection/progress/StartupConnectionProgressModal";
+import OrganizationDateTimeFields from "./components/OrganizationDateTimeFields";
+import { formatOrganizationRange } from "./components/organizationDateTimeUtils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
@@ -655,12 +657,10 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
     }
   };
 
-  const validateEventForm = () => {
+  const validateEventForm = (startDatetime, endDatetime) => {
     if (!eventForm.event_name.trim()) return `Vui lòng nhập tên ${rowLabel}.`;
-    if (eventForm.start_datetime && eventForm.end_datetime) {
-      if (
-        new Date(eventForm.start_datetime) >= new Date(eventForm.end_datetime)
-      ) {
+    if (startDatetime && endDatetime) {
+      if (startDatetime >= endDatetime) {
         return "Thời gian kết thúc phải sau thời gian bắt đầu.";
       }
     }
@@ -672,7 +672,17 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
 
   const handleSaveEvent = async (event) => {
     event.preventDefault();
-    const validationMessage = validateEventForm();
+    const formValues = new FormData(event.currentTarget);
+    const startDatetime = String(formValues.get("start_datetime") || "");
+    const endDatetime = String(formValues.get("end_datetime") || "");
+
+    if (
+      formValues.get("organization_time_incomplete") === "1" ||
+      formValues.get("organization_time_invalid") === "1"
+    ) {
+      return;
+    }
+    const validationMessage = validateEventForm(startDatetime, endDatetime);
     if (validationMessage) {
       alert(validationMessage);
       return;
@@ -691,8 +701,8 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
       mission: eventForm.mission.trim() || null,
       thumbnail: eventForm.thumbnail.trim() || null,
       location: eventForm.location.trim() || null,
-      start_datetime: eventForm.start_datetime || null,
-      end_datetime: eventForm.end_datetime || null,
+      start_datetime: startDatetime || null,
+      end_datetime: endDatetime || null,
       year: Number(eventForm.year) || null,
       organizer: eventForm.organizer.trim() || null,
       max_participants: Number(eventForm.max_participants) || 0,
@@ -1505,7 +1515,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px]">
+          <table className="w-full min-w-[1320px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-5 py-4">
@@ -1518,7 +1528,9 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                 <th className="px-5 py-4">Trạng thái</th>
                 <th className="px-5 py-4">Thời gian gửi </th>
 
-                <th className="px-5 py-4 text-right">Thao tác</th>
+                <th className="w-[340px] min-w-[340px] px-5 py-4 text-center">
+                  Thao tác
+                </th>
               </tr>
             </thead>
 
@@ -1569,13 +1581,11 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                         />
                         <div>
                           <p className="text-slate-700">
-                            {formatDateTime(item.start_datetime)}
+                            {formatOrganizationRange(
+                              item.start_datetime,
+                              item.end_datetime,
+                            )}
                           </p>
-                          {item.end_datetime && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              đến {formatDateTime(item.end_datetime)}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -1618,19 +1628,19 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                     <td className="px-4 py-4 text-slate-500">
                       {formatDateTime(item.created_at)}
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
+                    <td className="w-[340px] min-w-[340px] px-5 py-4">
+                      <div className="flex flex-nowrap items-center justify-center gap-2">
                         <button
                           type="button"
                           onClick={() => setProgressEvent(item)}
-                          className="rounded-lg border border-violet-200 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                          className="inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-700 hover:bg-violet-50"
                         >
                           Cập nhật tiến độ
                         </button>
                         <button
                           type="button"
                           onClick={() => handleViewEvent(item)}
-                          className="rounded-lg border border-blue-200 p-2 text-blue-600 hover:bg-blue-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50"
                           title="Xem chi tiết"
                         >
                           <Eye size={17} />
@@ -1638,7 +1648,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                         <button
                           type="button"
                           onClick={() => handleOpenTransfer(item)}
-                          className="rounded-lg border border-violet-200 p-2 text-violet-600 hover:bg-violet-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-200 text-violet-600 hover:bg-violet-50"
                           title={
                             isExhibition
                               ? "Chuyển sang Hội thảo"
@@ -1650,7 +1660,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                         <button
                           type="button"
                           onClick={() => openEditEventModal(item)}
-                          className="rounded-lg border border-amber-200 p-2 text-amber-600 hover:bg-amber-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50"
                           title="Sửa"
                         >
                           <Pencil size={17} />
@@ -1659,7 +1669,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                         <button
                           type="button"
                           onClick={() => handleDeleteEvent(item)}
-                          className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
                           title="Xóa"
                         >
                           <Trash2 size={17} />
@@ -1952,17 +1962,17 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                   />
                 </div>
 
-                <FormDateTime
-                  label="Thời gian bắt đầu"
-                  value={eventForm.start_datetime}
-                  onChange={(value) =>
-                    updateEventField("start_datetime", value)
+                <OrganizationDateTimeFields
+                  key={`${editingEventId || "new"}-${eventForm.start_datetime}-${eventForm.end_datetime}`}
+                  startValue={eventForm.start_datetime}
+                  endValue={eventForm.end_datetime}
+                  onCommit={(start, end) =>
+                    setEventForm((previous) => ({
+                      ...previous,
+                      start_datetime: start,
+                      end_datetime: end,
+                    }))
                   }
-                />
-                <FormDateTime
-                  label="Thời gian kết thúc"
-                  value={eventForm.end_datetime}
-                  onChange={(value) => updateEventField("end_datetime", value)}
                 />
                 <FormInput
                   label="Năm"
@@ -2242,11 +2252,19 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
 
                         <DetailItem
                           label="Thời gian bắt đầu"
-                          value={formatDateTime(selectedEvent.start_datetime)}
+                          value={
+                            selectedEvent.start_datetime
+                              ? formatDateTime(selectedEvent.start_datetime)
+                              : "Chưa cập nhật"
+                          }
                         />
                         <DetailItem
                           label="Thời gian kết thúc"
-                          value={formatDateTime(selectedEvent.end_datetime)}
+                          value={
+                            selectedEvent.end_datetime
+                              ? formatDateTime(selectedEvent.end_datetime)
+                              : "Chưa cập nhật"
+                          }
                         />
                         <DetailItem
                           label="Địa điểm"
@@ -3388,22 +3406,6 @@ function FormTextarea({ label, value, onChange, placeholder = "" }) {
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-green-500 focus:ring-4 focus:ring-green-100"
-      />
-    </div>
-  );
-}
-
-function FormDateTime({ label, value, onChange }) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-slate-700">
-        {label}
-      </label>
-      <input
-        type="datetime-local"
-        value={value || ""}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-green-500 focus:ring-4 focus:ring-green-100"
       />
     </div>
   );

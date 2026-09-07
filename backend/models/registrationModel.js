@@ -913,6 +913,7 @@ ${whereSql}
 
     const [
       [summaryRows],
+      [userTypeRows],
       [genderRows],
       [ageRows],
       [genderAgeRows],
@@ -932,6 +933,33 @@ ${whereSql}
         SELECT
           COUNT(*) AS total_registrations,
           COUNT(DISTINCT r.user_id) AS total_users,
+
+          COUNT(DISTINCT CASE
+            WHEN NULLIF(TRIM(u.user_type), '') IS NOT NULL
+              AND UPPER(TRIM(u.user_type)) <> 'OTHER'
+            THEN r.user_id
+          END) AS classified_user_types,
+
+          COUNT(DISTINCT CASE
+            WHEN NULLIF(TRIM(u.user_type), '') IS NULL
+              OR UPPER(TRIM(u.user_type)) = 'OTHER'
+            THEN r.user_id
+          END) AS unknown_user_types,
+
+          COUNT(DISTINCT CASE
+            WHEN NULLIF(TRIM(u.age_group), '') IS NOT NULL
+            THEN r.user_id
+          END) AS age_group_covered_users,
+
+          COUNT(CASE
+            WHEN NULLIF(TRIM(r.project_field), '') IS NOT NULL
+            THEN 1
+          END) AS project_field_covered_registrations,
+
+          COUNT(CASE
+            WHEN NULLIF(TRIM(r.startup_stage), '') IS NOT NULL
+            THEN 1
+          END) AS startup_stage_covered_registrations,
 
           SUM(
             r.register_status = 'PENDING'
@@ -958,11 +986,32 @@ ${whereSql}
         [...params],
       ),
 
+      // Nhóm đối tượng - đếm học viên duy nhất, giữ nguyên OTHER/UNKNOWN
+      db.query(
+        `
+  SELECT
+    CASE
+      WHEN NULLIF(TRIM(u.user_type), '') IS NULL THEN 'UNKNOWN'
+      ELSE u.user_type
+    END AS name,
+    COUNT(DISTINCT r.user_id) AS value
+
+  ${baseJoin}
+
+  GROUP BY u.user_type
+  ORDER BY value DESC
+`,
+        [...params],
+      ),
+
       // Giới tính - đếm học viên, không đếm trùng lượt đăng ký
       db.query(
         `
   SELECT
-    COALESCE(u.gender, 'UNKNOWN') AS name,
+    CASE
+      WHEN NULLIF(TRIM(u.gender), '') IS NULL THEN 'UNKNOWN'
+      ELSE u.gender
+    END AS name,
     COUNT(DISTINCT r.user_id) AS value
 
   ${baseJoin}
@@ -977,10 +1026,10 @@ ${whereSql}
       db.query(
         `
   SELECT
-    COALESCE(
-      u.age_group,
-      'Chưa xác định'
-    ) AS name,
+    CASE
+      WHEN NULLIF(TRIM(u.age_group), '') IS NULL THEN 'UNKNOWN'
+      ELSE u.age_group
+    END AS name,
 
     COUNT(DISTINCT r.user_id) AS value
 
@@ -1006,15 +1055,15 @@ ${whereSql}
       db.query(
         `
   SELECT
-    COALESCE(
-      u.gender,
-      'UNKNOWN'
-    ) AS gender,
+    CASE
+      WHEN NULLIF(TRIM(u.gender), '') IS NULL THEN 'UNKNOWN'
+      ELSE u.gender
+    END AS gender,
 
-    COALESCE(
-      u.age_group,
-      'Chưa xác định'
-    ) AS age_group,
+    CASE
+      WHEN NULLIF(TRIM(u.age_group), '') IS NULL THEN 'UNKNOWN'
+      ELSE u.age_group
+    END AS age_group,
 
     COUNT(DISTINCT r.user_id) AS value
 
@@ -1254,6 +1303,20 @@ ORDER BY name ASC
 
         total_users: Number(summary.total_users) || 0,
 
+        classified_user_types:
+          Number(summary.classified_user_types) || 0,
+
+        unknown_user_types: Number(summary.unknown_user_types) || 0,
+
+        age_group_covered_users:
+          Number(summary.age_group_covered_users) || 0,
+
+        project_field_covered_registrations:
+          Number(summary.project_field_covered_registrations) || 0,
+
+        startup_stage_covered_registrations:
+          Number(summary.startup_stage_covered_registrations) || 0,
+
         pending: Number(summary.pending) || 0,
 
         confirmed: Number(summary.confirmed) || 0,
@@ -1266,6 +1329,11 @@ ORDER BY name ASC
       },
 
       charts: {
+        user_types: userTypeRows.map((item) => ({
+          name: item.name,
+          value: Number(item.value),
+        })),
+
         genders: genderRows.map((item) => ({
           name: item.name,
           value: Number(item.value),

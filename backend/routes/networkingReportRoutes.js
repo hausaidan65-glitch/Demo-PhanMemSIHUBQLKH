@@ -16,6 +16,20 @@ router.use(
 );
 
 router.get("/summary", NetworkingReportController.summary);
+router.get("/export", NetworkingReportController.exportSummary);
+router.get("/events/export", NetworkingReportController.exportEvents);
 router.get("/events", NetworkingReportController.events);
+router.get(
+  "/events/:eventId/participants",
+  NetworkingReportController.eventParticipants,
+);
+router.get(
+  "/events/:eventId/participants/export",
+  NetworkingReportController.exportEventParticipants,
+);
+router.get(
+  "/events/:eventId/participants/:participantId",
+  NetworkingReportController.eventParticipantDetail,
+);
 
 module.exports = router;

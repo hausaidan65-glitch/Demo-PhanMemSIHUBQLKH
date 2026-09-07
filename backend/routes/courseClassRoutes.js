@@ -12,6 +12,9 @@ const AuthMiddleware = require("../middleware/authMiddleware");
 const RoleMiddleware = require("../middleware/roleMiddleware");
 
 const ScopeMiddleware = require("../middleware/scopeMiddleware");
+const {
+  uploadProgressAttachments,
+} = require("../middleware/uploadProgressAttachments");
 
 const verifyToken = AuthMiddleware.verifyToken;
 
@@ -38,6 +41,7 @@ router.post(
   verifyToken,
   allowAdmin,
   allowTraining,
+  uploadProgressAttachments,
   CourseClassProgressController.store,
 );
 

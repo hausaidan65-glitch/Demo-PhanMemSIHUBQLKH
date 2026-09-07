@@ -1,12 +1,21 @@
 const CourseReportModel = require("../models/courseReportModel");
+const { resolveReportPeriod } = require("../utils/reportPeriod");
 const {
   CourseStudentReportFilterValidationError,
   filterCourseReportStudents,
 } = require("../services/courseReport/courseStudentReportFilterService");
 const {
+  buildCourseStudentReportContentDisposition,
   buildCourseStudentReportFilename,
   buildCourseStudentReportWorkbook,
+  parseSelectedFields,
 } = require("../services/courseReport/courseStudentReportExportService");
+const CourseSummaryReportExportService = require(
+  "../services/courseReport/courseSummaryReportExportService",
+);
+const CourseOpeningReportExportService = require(
+  "../services/courseReport/courseOpeningReportExportService",
+);
 
 const COURSE_STUDENT_EXPORT_FILTERS = [
   "search",
@@ -22,9 +31,50 @@ const COURSE_STUDENT_EXPORT_FILTERS = [
 ];
 
 class CourseReportController {
+  static async exportSummary(req, res) {
+    try {
+      const period = resolveReportPeriod(req.query);
+      const [summaryData, courses] = await Promise.all([
+        CourseReportModel.getSummary(period.report_start, period.report_end),
+        CourseReportModel.getCourseSummaryRows(
+          period.report_start,
+          period.report_end,
+        ),
+      ]);
+      const workbook = CourseSummaryReportExportService.buildWorkbook({
+        period,
+        summary: summaryData.summary,
+        courses,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        CourseSummaryReportExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${CourseSummaryReportExportService.buildFilename(
+          period,
+        )}"`,
+      );
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.error("Lỗi xuất báo cáo tổng quan đào tạo:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể xuất báo cáo đào tạo. Vui lòng thử lại.",
+      });
+    }
+  }
+
   static async summary(req, res) {
     try {
-      const period = CourseReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query);
 
       const data = await CourseReportModel.getSummary(
         period.report_start,
@@ -57,7 +107,7 @@ class CourseReportController {
 
   static async programs(req, res) {
     try {
-      const period = CourseReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query);
 
       const programs = await CourseReportModel.getPrograms(
         period.report_start,
@@ -106,7 +156,7 @@ class CourseReportController {
         );
       }
 
-      const period = CourseReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query);
       const program = await CourseReportModel.findProgramById(programId);
 
       if (!program) {
@@ -165,7 +215,7 @@ class CourseReportController {
         );
       }
 
-      const period = CourseReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query);
       const course = await CourseReportModel.findCourseById(courseId);
 
       if (!course) {
@@ -202,6 +252,86 @@ class CourseReportController {
       return res.status(500).json({
         success: false,
         message: "Không thể tải báo cáo lớp mở của khóa học.",
+      });
+    }
+  }
+
+  static async exportCourseOpenings(req, res) {
+    try {
+      const rawCourseId = String(req.params.courseId);
+      if (!/^\d+$/.test(rawCourseId)) {
+        throw CourseReportController.validationError(
+          "ID khóa học phải là số nguyên dương.",
+        );
+      }
+      const courseId = Number(rawCourseId);
+      if (!Number.isSafeInteger(courseId) || courseId <= 0) {
+        throw CourseReportController.validationError(
+          "ID khóa học phải là số nguyên dương.",
+        );
+      }
+
+      const period = resolveReportPeriod(req.query);
+      const options = CourseOpeningReportExportService.parseExportQuery(
+        req.query,
+      );
+      const [course, openings] = await Promise.all([
+        CourseReportModel.findCourseById(courseId),
+        CourseReportModel.getOpeningsByCourse(
+          courseId,
+          period.report_start,
+          period.report_end,
+        ),
+      ]);
+
+      if (!course) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy khóa học.",
+        });
+      }
+
+      const exportedOpenings = CourseOpeningReportExportService.filterOpenings(
+        openings,
+        options.scope,
+        options.filters,
+      );
+      const workbook = CourseOpeningReportExportService.buildWorkbook({
+        course,
+        period,
+        openings: exportedOpenings,
+        scope: options.scope,
+        filters: options.filters,
+        selectedFields: options.selectedFields,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        CourseOpeningReportExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${CourseOpeningReportExportService.buildFilename(
+          course,
+          period,
+          options.scope,
+        )}"`,
+      );
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      if (
+        error instanceof
+          CourseOpeningReportExportService.CourseOpeningExportValidationError ||
+        error.statusCode === 400
+      ) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.error("Lỗi xuất báo cáo lớp / đợt tổ chức:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể xuất báo cáo lớp / đợt tổ chức.",
       });
     }
   }
@@ -298,6 +428,7 @@ class CourseReportController {
       const period = CourseReportController.resolveOptionalPeriodMetadata(
         req.query,
       );
+      const selectedFields = parseSelectedFields(req.query);
       const opening = await CourseReportModel.findOpeningById(openingId);
 
       if (!opening) {
@@ -319,8 +450,9 @@ class CourseReportController {
         scope,
         filters,
         period,
+        selectedFields,
       });
-      const filename = buildCourseStudentReportFilename(opening);
+      const filename = buildCourseStudentReportFilename(opening, period);
       const buffer = await workbook.xlsx.writeBuffer();
 
       res.setHeader(
@@ -329,7 +461,7 @@ class CourseReportController {
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${filename}"`,
+        buildCourseStudentReportContentDisposition(filename),
       );
 
       return res.send(Buffer.from(buffer));
@@ -536,18 +668,22 @@ class CourseReportController {
     const hasYear = Object.prototype.hasOwnProperty.call(query, "year");
     const hasQuarter = Object.prototype.hasOwnProperty.call(query, "quarter");
     const hasMonth = Object.prototype.hasOwnProperty.call(query, "month");
+    const hasWeek = Object.prototype.hasOwnProperty.call(query, "week");
 
-    if (!hasYear && !hasQuarter && !hasMonth) {
+    if (!hasYear && !hasQuarter && !hasMonth && !hasWeek) {
       return undefined;
     }
 
-    const period = CourseReportController.resolvePeriod(query);
+    const period = resolveReportPeriod(query);
 
     return {
       type: period.type,
       year: period.year,
       quarter: period.quarter,
       month: period.month,
+      week: period.week,
+      start_date: period.start_date,
+      end_date: period.end_date,
     };
   }
 

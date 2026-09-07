@@ -1,6 +1,12 @@
 const IncubationProgramProgressModel = require(
   "../models/incubationProgramProgressModel",
 );
+const {
+  PROGRESS_TYPES,
+  cleanupFiles,
+  createProgressWithAttachments,
+  hydrateHistory,
+} = require("../services/progressAttachmentService");
 
 class IncubationProgramProgressController {
   static validationError(message) {
@@ -77,8 +83,10 @@ class IncubationProgramProgressController {
         });
       }
 
-      const history =
-        await IncubationProgramProgressModel.getHistory(programId);
+      const history = await hydrateHistory(
+        PROGRESS_TYPES.INCUBATION,
+        await IncubationProgramProgressModel.getHistory(programId),
+      );
 
       return res.json({
         success: true,
@@ -108,6 +116,7 @@ class IncubationProgramProgressController {
         await IncubationProgramProgressModel.findProgramById(programId);
 
       if (!program) {
+        await cleanupFiles(req.files);
         return res.status(404).json({
           success: false,
           message: "Không tìm thấy Chương trình ươm tạo.",
@@ -117,17 +126,27 @@ class IncubationProgramProgressController {
       const createdBy = Number(req.admin?.id);
 
       if (!Number.isSafeInteger(createdBy) || createdBy <= 0) {
+        await cleanupFiles(req.files);
         return res.status(401).json({
           success: false,
           message: "Thông tin quản trị viên không hợp lệ.",
         });
       }
 
-      const progress = await IncubationProgramProgressModel.createProgress({
-        programId,
-        content: payload.content,
-        note: payload.note,
-        createdBy,
+      const progress = await createProgressWithAttachments({
+        progressType: PROGRESS_TYPES.INCUBATION,
+        files: req.files,
+        uploadedBy: createdBy,
+        createProgress: (connection) =>
+          IncubationProgramProgressModel.createProgress(
+            {
+              programId,
+              content: payload.content,
+              note: payload.note,
+              createdBy,
+            },
+            connection,
+          ),
       });
 
       return res.status(201).json({
@@ -139,6 +158,7 @@ class IncubationProgramProgressController {
         },
       });
     } catch (error) {
+      await cleanupFiles(req.files);
       return IncubationProgramProgressController.handleError(
         res,
         error,

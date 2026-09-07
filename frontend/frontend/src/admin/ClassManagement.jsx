@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import CourseClassProgressModal from "./training/progress/CourseClassProgressModal";
+import OrganizationDateTimeFields from "./components/OrganizationDateTimeFields";
 import {
   ChevronDown,
   Eye,
@@ -302,6 +303,7 @@ function getStatusClass(status) {
 function ClassManagement() {
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
+  const [uniqueConfirmedStudents, setUniqueConfirmedStudents] = useState(0);
   const [trainingCourses, setTrainingCourses] = useState([]);
 
   const [loading, setLoading] = useState(false);
@@ -424,6 +426,9 @@ function ClassManagement() {
       });
 
       setClasses(response.data.data || []);
+      setUniqueConfirmedStudents(
+        Number(response.data.summary?.unique_confirmed_students) || 0,
+      );
     } catch (error) {
       console.error(
         "Lỗi tải danh sách lớp học:",
@@ -1051,6 +1056,21 @@ function ClassManagement() {
   const handleSaveOpening = async (event) => {
     event.preventDefault();
 
+    const formValues = new FormData(event.currentTarget);
+    const submittedOrganizationStartDate = String(
+      formValues.get("organization_start_date") || "",
+    );
+    const submittedOrganizationEndDate = String(
+      formValues.get("organization_end_date") || "",
+    );
+
+    if (
+      formValues.get("organization_time_incomplete") === "1" ||
+      formValues.get("organization_time_invalid") === "1"
+    ) {
+      return;
+    }
+
     if (!selectedClass?.id) {
       alert("Không xác định được lớp học.");
       return;
@@ -1072,9 +1092,9 @@ function ClassManagement() {
 
       return;
     }
-    const organizationStartDate = openingForm.organization_start_date;
+    const organizationStartDate = submittedOrganizationStartDate;
 
-    const organizationEndDate = openingForm.organization_end_date;
+    const organizationEndDate = submittedOrganizationEndDate;
 
     // Không bắt buộc ở Admin thường nếu đã có sessions.
     // Nhưng nếu nhập thì phải nhập đủ cặp.
@@ -1153,9 +1173,9 @@ function ClassManagement() {
       register_open: openingForm.register_open || null,
 
       register_close: openingForm.register_close || null,
-      organization_start_date: openingForm.organization_start_date || null,
+      organization_start_date: organizationStartDate || null,
 
-      organization_end_date: openingForm.organization_end_date || null,
+      organization_end_date: organizationEndDate || null,
       max_students: Number(openingForm.max_students),
 
       status: openingForm.status,
@@ -1394,10 +1414,7 @@ function ClassManagement() {
 
         <SummaryCard
           label="Tổng học viên"
-          value={classes.reduce(
-            (sum, item) => sum + Number(item.total_students || 0),
-            0,
-          )}
+          value={uniqueConfirmedStudents}
           valueClass="text-violet-600"
         />
       </div>
@@ -2237,11 +2254,11 @@ function ClassManagement() {
                               )}
                             </div>
 
-                            <div className="flex shrink-0 flex-wrap gap-2">
+                            <div className="flex w-full shrink-0 flex-wrap items-center justify-center gap-2 sm:w-auto sm:min-w-[340px] xl:flex-nowrap">
                               <button
                                 type="button"
                                 onClick={() => setProgressOpening(opening)}
-                                className="rounded-lg border border-violet-200 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+                                className="inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-700 hover:bg-violet-50"
                               >
                                 Cập nhật tiến độ
                               </button>
@@ -2252,7 +2269,7 @@ function ClassManagement() {
                                 onClick={() =>
                                   handleViewOpeningStudents(opening)
                                 }
-                                className="rounded-lg border border-blue-200 p-2 text-blue-600 hover:bg-blue-50"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50"
                                 title="Xem danh sách học viên"
                               >
                                 <Eye size={17} />
@@ -2263,25 +2280,10 @@ function ClassManagement() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenAttendance(opening)}
-                                className="
-      inline-flex
-      items-center
-      gap-2
-      rounded-lg
-      border
-      border-emerald-200
-      px-3
-      py-2
-      text-sm
-      font-semibold
-      text-emerald-700
-      transition
-      hover:bg-emerald-50
-    "
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 transition hover:bg-emerald-50"
                                 title="Điểm danh QR"
                               >
                                 <ScanLine size={17} />
-                                Điểm danh
                               </button>
 
                               {/* SỬA */}
@@ -2289,7 +2291,7 @@ function ClassManagement() {
                               <button
                                 type="button"
                                 onClick={() => openEditOpeningModal(opening)}
-                                className="rounded-lg border border-amber-200 p-2 text-amber-600 hover:bg-amber-50"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50"
                                 title="Sửa đợt"
                               >
                                 <Pencil size={17} />
@@ -2300,7 +2302,7 @@ function ClassManagement() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteOpening(opening)}
-                                className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
                                 title="Xóa đợt"
                               >
                                 <Trash2 size={17} />
@@ -2845,39 +2847,21 @@ function ClassManagement() {
                           updateOpeningField("register_close", value)
                         }
                       />
-                      <div className="md:col-span-2">
-                        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                          <p className="text-sm font-bold text-blue-900">
-                            Thời gian tổ chức
-                          </p>
-
-                          <div className="mt-4 grid gap-4 md:grid-cols-2">
-                            <FormInput
-                              label="Ngày bắt đầu tổ chức"
-                              type="date"
-                              value={openingForm.organization_start_date}
-                              onChange={(value) =>
-                                updateOpeningField(
-                                  "organization_start_date",
-                                  value,
-                                )
-                              }
-                            />
-
-                            <FormInput
-                              label="Ngày kết thúc tổ chức"
-                              type="date"
-                              value={openingForm.organization_end_date}
-                              onChange={(value) =>
-                                updateOpeningField(
-                                  "organization_end_date",
-                                  value,
-                                )
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <OrganizationDateTimeFields
+                        key={`${editingOpeningId || "new"}-${openingForm.organization_start_date}-${openingForm.organization_end_date}`}
+                        dateOnly
+                        startName="organization_start_date"
+                        endName="organization_end_date"
+                        startValue={openingForm.organization_start_date}
+                        endValue={openingForm.organization_end_date}
+                        onCommit={(start, end) =>
+                          setOpeningForm((previous) => ({
+                            ...previous,
+                            organization_start_date: start,
+                            organization_end_date: end,
+                          }))
+                        }
+                      />
                       <FormInput
                         label="Số học viên tối đa"
                         type="number"

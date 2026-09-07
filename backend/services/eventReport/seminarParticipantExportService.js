@@ -1,34 +1,41 @@
 const ExcelJS = require("exceljs");
+const { resolveReportPeriod } = require("../../utils/reportPeriod");
 
 const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+const FIELD_DEFINITIONS = {
+  full_name: { header: "Họ và tên", width: 28, getValue: (row) => displayValue(row.full_name) },
+  email: { header: "Email", width: 28, getValue: (row) => displayValue(row.email) },
+  phone: { header: "Điện thoại", width: 18, getValue: (row) => displayValue(row.phone) },
+  gender: { header: "Giới tính", width: 14, getValue: (row) => displayValue(row.gender) },
+  age_group: { header: "Nhóm tuổi", width: 16, getValue: (row) => displayValue(row.age_group) },
+  user_type: { header: "Nhóm đối tượng", width: 20, getValue: (row) => displayValue(row.user_type) },
+  organization: { header: "Đơn vị", width: 26, getValue: (row) => displayValue(row.organization) },
+  position: { header: "Chức vụ", width: 20, getValue: (row) => displayValue(row.position) },
+  participant_role: { header: "Vai trò tham gia", width: 20, getValue: (row) => displayValue(row.participant_role) },
+  has_project: { header: "Có dự án", width: 14, getValue: (row) => getHasProjectLabel(row.has_project) },
+  project_field: { header: "Lĩnh vực dự án", width: 24, getValue: (row) => displayValue(row.project_field) },
+  startup_stage: { header: "Giai đoạn Startup", width: 22, getValue: (row) => displayValue(row.startup_stage) },
+  program_selection_status: { header: "Trạng thái tuyển chọn chương trình", width: 32, getValue: (row) => displayValue(row.program_selection_status) },
+  support_needs: { header: "Nhu cầu hỗ trợ", width: 30, getValue: (row) => displayValue(row.support_needs) },
+  organizer_question: { header: "Câu hỏi cho BTC", width: 30, getValue: (row) => displayValue(row.organizer_question) },
+  note: { header: "Ghi chú", width: 28, getValue: (row) => displayValue(row.note) },
+  registration_status: { header: "Trạng thái đăng ký", width: 22, getValue: (row) => displayValue(row.registration_status) },
+  checked_in: { header: "Check-in", width: 18, getValue: (row) => getCheckedInLabel(row.checked_in) },
+  checked_in_at: { header: "Thời gian check-in", width: 22, getValue: (row) => formatDateTime(row.checked_in_at) },
+  created_at: { header: "Thời gian đăng ký", width: 22, getValue: (row) => formatDateTime(row.created_at) },
+};
+
+const DEFAULT_FIELD_KEYS = Object.freeze(Object.keys(FIELD_DEFINITIONS));
+const INDEX_COLUMN = {
+  header: "STT",
+  width: 8,
+  getValue: (_row, index) => index + 1,
+};
 const EXPORT_COLUMNS = [
-  { header: "STT", key: "index", width: 8 },
-  { header: "Họ và tên", key: "full_name", width: 28 },
-  { header: "Email", key: "email", width: 28 },
-  { header: "Điện thoại", key: "phone", width: 18 },
-  { header: "Giới tính", key: "gender", width: 14 },
-  { header: "Nhóm tuổi", key: "age_group", width: 16 },
-  { header: "Nhóm đối tượng", key: "user_type", width: 20 },
-  { header: "Đơn vị", key: "organization", width: 26 },
-  { header: "Chức vụ", key: "position", width: 20 },
-  { header: "Vai trò tham gia", key: "participant_role", width: 20 },
-  { header: "Có dự án", key: "has_project", width: 14 },
-  { header: "Lĩnh vực dự án", key: "project_field", width: 24 },
-  { header: "Giai đoạn Startup", key: "startup_stage", width: 22 },
-  {
-    header: "Trạng thái tuyển chọn chương trình",
-    key: "program_selection_status",
-    width: 32,
-  },
-  { header: "Nhu cầu hỗ trợ", key: "support_needs", width: 30 },
-  { header: "Câu hỏi cho BTC", key: "organizer_question", width: 30 },
-  { header: "Ghi chú", key: "note", width: 28 },
-  { header: "Trạng thái đăng ký", key: "registration_status", width: 22 },
-  { header: "Check-in", key: "checked_in", width: 18 },
-  { header: "Thời gian check-in", key: "checked_in_at", width: 22 },
-  { header: "Thời gian đăng ký", key: "created_at", width: 22 },
+  INDEX_COLUMN,
+  ...DEFAULT_FIELD_KEYS.map((key) => ({ key, ...FIELD_DEFINITIONS[key] })),
 ];
 
 function validationError(message) {
@@ -69,26 +76,6 @@ function matchesRawFilter(value, filterValue) {
     : valueText === filterValue;
 }
 
-function parseOptionalInteger(value, name, minimum, maximum) {
-  if (value === undefined || normalizedText(value) === "") {
-    return null;
-  }
-
-  const rawValue = normalizedText(value);
-
-  if (!/^\d+$/.test(rawValue)) {
-    throw validationError(`${name} không hợp lệ.`);
-  }
-
-  const parsedValue = Number(rawValue);
-
-  if (parsedValue < minimum || parsedValue > maximum) {
-    throw validationError(`${name} không hợp lệ.`);
-  }
-
-  return parsedValue;
-}
-
 function parseExportQuery(query) {
   const scope = normalizedText(query.scope).toUpperCase();
 
@@ -96,17 +83,20 @@ function parseExportQuery(query) {
     throw validationError("scope phải là ALL hoặc FILTERED.");
   }
 
-  const year = parseOptionalInteger(query.year, "Năm báo cáo", 2000, 2100);
-  const quarter = parseOptionalInteger(query.quarter, "Quý báo cáo", 1, 4);
-  const month = parseOptionalInteger(query.month, "Tháng báo cáo", 1, 12);
-
-  if (quarter !== null && month !== null) {
-    throw validationError("Không thể dùng đồng thời quý và tháng.");
-  }
-
-  if ((quarter !== null || month !== null) && year === null) {
-    throw validationError("Năm báo cáo là bắt buộc khi có quý hoặc tháng.");
-  }
+  const hasPeriod = ["year", "quarter", "month", "week"].some(
+    (name) => query[name] !== undefined && normalizedText(query[name]) !== "",
+  );
+  const period = hasPeriod
+    ? resolveReportPeriod(query)
+    : {
+        type: null,
+        year: null,
+        quarter: null,
+        month: null,
+        week: null,
+        start_date: null,
+        end_date: null,
+      };
 
   const filters = {
     keyword: normalizedText(query.keyword),
@@ -123,10 +113,35 @@ function parseExportQuery(query) {
     throw validationError("checked_in không hợp lệ.");
   }
 
+  let selectedFields = null;
+  if (Object.prototype.hasOwnProperty.call(query, "fields")) {
+    const rawFields = Array.isArray(query.fields)
+      ? query.fields.join(",")
+      : query.fields;
+    const keys = normalizedText(rawFields)
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+
+    if (!keys.length) {
+      throw validationError("Vui lòng chọn ít nhất một trường để xuất.");
+    }
+
+    const unknownFields = keys.filter((key) => !FIELD_DEFINITIONS[key]);
+    if (unknownFields.length) {
+      throw validationError(
+        `Trường xuất không hợp lệ: ${[...new Set(unknownFields)].join(", ")}.`,
+      );
+    }
+
+    selectedFields = [...new Set(keys)];
+  }
+
   return {
     scope,
     filters,
-    period: { year, quarter, month },
+    period,
+    selectedFields,
   };
 }
 
@@ -176,6 +191,30 @@ function displayValue(value) {
   return value === null || value === undefined ? "" : value;
 }
 
+function sanitizeFilenamePart(value) {
+  return normalizedText(value)
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "");
+}
+
+function buildPeriodFilenamePart(period) {
+  if (!period?.year) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  if (period.type === "QUARTER") return `${period.year}_Q${period.quarter}`;
+  if (period.type === "MONTH") {
+    return `${period.year}_${String(period.month).padStart(2, "0")}`;
+  }
+  if (period.type === "WEEK") {
+    return `${period.year}_W${String(period.week).padStart(2, "0")}`;
+  }
+
+  return String(period.year);
+}
+
 function getCheckedInLabel(value) {
   const normalizedValue = normalizeCheckedIn(value);
 
@@ -202,19 +241,32 @@ function getHasProjectLabel(value) {
   return "Không xác định";
 }
 
-function addMetadataRow(sheet, label, value) {
+function addMetadataRow(sheet, label, value, columnCount) {
   const row = sheet.addRow([label, displayValue(value)]);
 
   row.getCell(1).font = { bold: true };
-  sheet.mergeCells(row.number, 2, row.number, EXPORT_COLUMNS.length);
+  sheet.mergeCells(row.number, 2, row.number, columnCount);
 }
 
-function createWorkbook({ seminar, participants, scope, filters, period }) {
+function createWorkbook({
+  seminar,
+  participants,
+  scope,
+  filters,
+  period,
+  selectedFields = null,
+}) {
+  const fieldKeys = selectedFields === null ? DEFAULT_FIELD_KEYS : selectedFields;
+  const columns = [
+    INDEX_COLUMN,
+    ...fieldKeys.map((key) => FIELD_DEFINITIONS[key]),
+  ];
+  const columnCount = columns.length;
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Người tham gia");
 
   workbook.creator = "SIHUB";
-  sheet.mergeCells(1, 1, 1, EXPORT_COLUMNS.length);
+  sheet.mergeCells(1, 1, 1, columnCount);
   sheet.getCell("A1").value = "BÁO CÁO NGƯỜI THAM GIA HỘI THẢO";
   sheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
   sheet.getCell("A1").fill = {
@@ -224,24 +276,34 @@ function createWorkbook({ seminar, participants, scope, filters, period }) {
   };
   sheet.getCell("A1").alignment = { horizontal: "center" };
 
-  addMetadataRow(sheet, "Tên hội thảo", seminar.event_name);
-  addMetadataRow(sheet, "Mã hội thảo", seminar.event_code);
-  addMetadataRow(sheet, "Địa điểm", seminar.location);
-  addMetadataRow(sheet, "Bắt đầu", formatDateTime(seminar.start_datetime));
-  addMetadataRow(sheet, "Kết thúc", formatDateTime(seminar.end_datetime));
-  addMetadataRow(sheet, "Trạng thái", seminar.status);
-  addMetadataRow(sheet, "Phạm vi xuất", scope === "ALL" ? "TẤT CẢ" : "THEO BỘ LỌC");
+  addMetadataRow(sheet, "Tên hội thảo", seminar.event_name, columnCount);
+  addMetadataRow(sheet, "Mã hội thảo", seminar.event_code, columnCount);
+  addMetadataRow(sheet, "Địa điểm", seminar.location, columnCount);
+  addMetadataRow(sheet, "Bắt đầu", formatDateTime(seminar.start_datetime), columnCount);
+  addMetadataRow(sheet, "Kết thúc", formatDateTime(seminar.end_datetime), columnCount);
+  addMetadataRow(sheet, "Trạng thái", seminar.status, columnCount);
+  addMetadataRow(sheet, "Phạm vi xuất", scope === "ALL" ? "TẤT CẢ" : "THEO BỘ LỌC", columnCount);
 
   if (period.year !== null) {
-    addMetadataRow(sheet, "Năm báo cáo", period.year);
+    addMetadataRow(sheet, "Năm báo cáo", period.year, columnCount);
   }
 
   if (period.quarter !== null) {
-    addMetadataRow(sheet, "Quý", period.quarter);
+    addMetadataRow(sheet, "Quý", period.quarter, columnCount);
   }
 
   if (period.month !== null) {
-    addMetadataRow(sheet, "Tháng", period.month);
+    addMetadataRow(sheet, "Tháng", period.month, columnCount);
+  }
+
+  if (period.week !== null) {
+    addMetadataRow(sheet, "Tuần", `${period.week} / ${period.year}`, columnCount);
+    addMetadataRow(
+      sheet,
+      "Thời gian kỳ báo cáo",
+      `${formatDateTime(period.start_date)} – ${formatDateTime(period.end_date)}`,
+      columnCount,
+    );
   }
 
   if (scope === "FILTERED") {
@@ -255,13 +317,13 @@ function createWorkbook({ seminar, participants, scope, filters, period }) {
 
     filterMetadata.forEach(([label, value]) => {
       if (value) {
-        addMetadataRow(sheet, label, value);
+        addMetadataRow(sheet, label, value, columnCount);
       }
     });
   }
 
   sheet.addRow([]);
-  const headerRow = sheet.addRow(EXPORT_COLUMNS.map((column) => column.header));
+  const headerRow = sheet.addRow(columns.map((column) => column.header));
 
   headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
   headerRow.fill = {
@@ -272,32 +334,10 @@ function createWorkbook({ seminar, participants, scope, filters, period }) {
   headerRow.alignment = { horizontal: "center", vertical: "middle" };
 
   participants.forEach((participant, index) => {
-    sheet.addRow([
-      index + 1,
-      displayValue(participant.full_name),
-      displayValue(participant.email),
-      displayValue(participant.phone),
-      displayValue(participant.gender),
-      displayValue(participant.age_group),
-      displayValue(participant.user_type),
-      displayValue(participant.organization),
-      displayValue(participant.position),
-      displayValue(participant.participant_role),
-      getHasProjectLabel(participant.has_project),
-      displayValue(participant.project_field),
-      displayValue(participant.startup_stage),
-      displayValue(participant.program_selection_status),
-      displayValue(participant.support_needs),
-      displayValue(participant.organizer_question),
-      displayValue(participant.note),
-      displayValue(participant.registration_status),
-      getCheckedInLabel(participant.checked_in),
-      formatDateTime(participant.checked_in_at),
-      formatDateTime(participant.created_at),
-    ]);
+    sheet.addRow(columns.map((column) => column.getValue(participant, index)));
   });
 
-  EXPORT_COLUMNS.forEach((column, index) => {
+  columns.forEach((column, index) => {
     sheet.getColumn(index + 1).width = column.width;
   });
   sheet.eachRow((row) => {
@@ -306,7 +346,7 @@ function createWorkbook({ seminar, participants, scope, filters, period }) {
   sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
   sheet.autoFilter = {
     from: { row: headerRow.number, column: 1 },
-    to: { row: headerRow.number, column: EXPORT_COLUMNS.length },
+    to: { row: headerRow.number, column: columnCount },
   };
 
   return workbook;
@@ -323,18 +363,23 @@ async function buildExport({ seminar, participants, options }) {
     scope: options.scope,
     filters: options.filters,
     period: options.period,
+    selectedFields: options.selectedFields,
   });
   const buffer = await workbook.xlsx.writeBuffer();
 
   return {
     buffer,
     exportedParticipants,
-    filename: `seminar-participants-${seminar.seminar_id}-${options.scope.toLowerCase()}.xlsx`,
+    filename: `SIHUB_Seminar_Participants_${
+      sanitizeFilenamePart(seminar.event_code) || seminar.seminar_id
+    }_${buildPeriodFilenamePart(options.period)}_${options.scope}.xlsx`,
   };
 }
 
 module.exports = {
+  DEFAULT_FIELD_KEYS,
   EXPORT_COLUMNS,
+  FIELD_DEFINITIONS,
   XLSX_CONTENT_TYPE,
   buildExport,
   createWorkbook,

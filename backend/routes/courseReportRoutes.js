@@ -16,6 +16,7 @@ router.use(
   ScopeMiddleware.allow("TRAINING"),
 );
 
+router.get("/export", CourseReportController.exportSummary);
 router.get("/summary", CourseReportController.summary);
 router.get("/programs", CourseReportController.programs);
 router.get(
@@ -25,6 +26,10 @@ router.get(
 router.get(
   "/courses/:courseId/openings",
   CourseReportController.openingsByCourse,
+);
+router.get(
+  "/courses/:courseId/openings/export",
+  CourseReportController.exportCourseOpenings,
 );
 router.get(
   "/openings/:openingId/students",

@@ -1,7 +1,10 @@
+import { formatWeekPreview, getWeekOptions } from "../reportPeriodUtils";
+
 const PERIOD_OPTIONS = [
   { value: "YEAR", label: "Năm" },
   { value: "QUARTER", label: "Quý" },
   { value: "MONTH", label: "Tháng" },
+  { value: "WEEK", label: "Tuần" },
 ];
 
 const FIELD_CLASS =
@@ -91,6 +94,29 @@ export default function SeminarReportFilters({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {filters.periodType === "WEEK" && (
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700">
+            Tuần ISO
+          </label>
+          <select
+            required
+            value={filters.week}
+            onChange={(event) => onChange("week", event.target.value)}
+            className={FIELD_CLASS}
+          >
+            {getWeekOptions(Number(filters.year)).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            {formatWeekPreview(Number(filters.year), Number(filters.week))}
+          </p>
         </div>
       )}
 

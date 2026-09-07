@@ -292,6 +292,98 @@ class CourseReportModel {
     }));
   }
 
+  static async getCourseSummaryRows(reportStart, reportEnd) {
+    const [rows] = await db.query(
+      `
+        WITH filtered_openings AS (
+          SELECT
+            cc.id AS opening_id,
+            c.id AS course_id,
+            c.course_name,
+            tp.program_name
+          FROM course_classes cc
+          INNER JOIN courses c ON c.id = cc.course_id
+          INNER JOIN training_programs tp ON tp.id = c.program_id
+          WHERE cc.deleted_at IS NULL
+            AND c.deleted_at IS NULL
+            AND cc.organization_start_date IS NOT NULL
+            AND cc.organization_end_date IS NOT NULL
+            AND cc.organization_start_date <= cc.organization_end_date
+            AND cc.organization_start_date <= ?
+            AND cc.organization_end_date >= ?
+        ),
+        openings_by_course AS (
+          SELECT
+            course_id,
+            course_name,
+            program_name,
+            COUNT(DISTINCT opening_id) AS total_openings
+          FROM filtered_openings
+          GROUP BY course_id, course_name, program_name
+        ),
+        registered_by_course AS (
+          SELECT
+            fo.course_id,
+            COUNT(DISTINCT r.user_id) AS total_students_registered
+          FROM filtered_openings fo
+          INNER JOIN registrations r ON r.class_id = fo.opening_id
+          WHERE r.register_status IN ('PENDING', 'CONFIRMED')
+            AND r.user_id IS NOT NULL
+          GROUP BY fo.course_id
+        ),
+        attended_by_course AS (
+          SELECT
+            fo.course_id,
+            COUNT(DISTINCT r.user_id) AS total_students_attended
+          FROM course_class_attendances a
+          INNER JOIN registrations r ON r.id = a.registration_id
+          INNER JOIN filtered_openings fo ON fo.opening_id = r.class_id
+          GROUP BY fo.course_id
+        ),
+        certificates_by_course AS (
+          SELECT
+            fo.course_id,
+            COUNT(DISTINCT r.user_id) AS total_certificates_issued
+          FROM course_certificates cert
+          INNER JOIN registrations r ON r.id = cert.registration_id
+          INNER JOIN filtered_openings fo ON fo.opening_id = r.class_id
+          WHERE cert.issued = 1
+          GROUP BY fo.course_id
+        )
+        SELECT
+          course.course_id,
+          course.program_name,
+          course.course_name,
+          course.total_openings,
+          COALESCE(registered.total_students_registered, 0)
+            AS total_students_registered,
+          COALESCE(attended.total_students_attended, 0)
+            AS total_students_attended,
+          COALESCE(certificates.total_certificates_issued, 0)
+            AS total_certificates_issued
+        FROM openings_by_course course
+        LEFT JOIN registered_by_course registered
+          ON registered.course_id = course.course_id
+        LEFT JOIN attended_by_course attended
+          ON attended.course_id = course.course_id
+        LEFT JOIN certificates_by_course certificates
+          ON certificates.course_id = course.course_id
+        ORDER BY course.program_name ASC, course.course_name ASC, course.course_id ASC
+      `,
+      [reportEnd, reportStart],
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      course_id: Number(row.course_id),
+      total_openings: Number(row.total_openings) || 0,
+      total_students_registered: Number(row.total_students_registered) || 0,
+      total_students_attended: Number(row.total_students_attended) || 0,
+      total_certificates_issued:
+        Number(row.total_certificates_issued) || 0,
+    }));
+  }
+
   static async findProgramById(programId) {
     const [rows] = await db.query(
       `

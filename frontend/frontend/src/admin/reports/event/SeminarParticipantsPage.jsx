@@ -4,6 +4,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import eventReportApi from "../../../services/eventReportApi";
 import SeminarParticipantFilters from "./SeminarParticipantFilters";
+import SeminarExportFieldSelector from "./SeminarExportFieldSelector";
+import { DEFAULT_SEMINAR_EXPORT_FIELDS } from "./seminarExportFields";
 import {
   filterParticipants,
   buildParticipantExportParams,
@@ -35,6 +37,9 @@ export default function SeminarParticipantsPage() {
   const [error, setError] = useState("");
   const [exportingScope, setExportingScope] = useState("");
   const [exportError, setExportError] = useState("");
+  const [selectedExportFields, setSelectedExportFields] = useState(() => [
+    ...DEFAULT_SEMINAR_EXPORT_FIELDS,
+  ]);
   const requestIdRef = useRef(0);
 
   const loadParticipants = useCallback(async () => {
@@ -109,12 +114,45 @@ export default function SeminarParticipantsPage() {
     () => filterParticipants(participants, filters),
     [filters, participants],
   );
+  const hasActiveFilters = Object.values(filters).some(Boolean);
 
   const updateFilter = (name, value) => {
     setFilters((previous) => ({ ...previous, [name]: value }));
   };
 
+  const getDownloadFilename = (contentDisposition, scope) => {
+    const match = String(contentDisposition || "").match(
+      /filename\s*=\s*(?:"([^"]+)"|([^;\s]+))/i,
+    );
+
+    return (
+      String(match?.[1] || match?.[2] || "").trim() ||
+      `seminar-participants-${seminarId}-${scope.toLowerCase()}.xlsx`
+    );
+  };
+
+  const getExportErrorMessage = async (error) => {
+    const errorData = error.response?.data;
+
+    if (errorData instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await errorData.text());
+
+        if (parsed?.message) return parsed.message;
+      } catch {
+        return "Không thể xuất danh sách người tham gia. Vui lòng thử lại.";
+      }
+    }
+
+    return (
+      errorData?.message ||
+      "Không thể xuất danh sách người tham gia. Vui lòng thử lại."
+    );
+  };
+
   const handleExport = async (scope) => {
+    if (selectedExportFields.length === 0) return;
+
     setExportingScope(scope);
     setExportError("");
 
@@ -124,6 +162,7 @@ export default function SeminarParticipantsPage() {
         new URLSearchParams(location.search),
         scope,
       );
+      params.fields = selectedExportFields.join(",");
       const response = await eventReportApi.exportSeminarParticipants(
         seminarId,
         params,
@@ -135,17 +174,16 @@ export default function SeminarParticipantsPage() {
       const link = document.createElement("a");
 
       link.href = url;
-      link.download = `seminar-participants-${seminarId}-${scope.toLowerCase()}.xlsx`;
+      link.download = getDownloadFilename(
+        response.headers?.["content-disposition"],
+        scope,
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (requestError) {
-      setExportError(
-        requestError.response?.data?.message ||
-          requestError.message ||
-          "Không thể xuất danh sách người tham gia.",
-      );
+      setExportError(await getExportErrorMessage(requestError));
     } finally {
       setExportingScope("");
     }
@@ -205,17 +243,24 @@ export default function SeminarParticipantsPage() {
                 Danh sách người tham gia
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Hiển thị {filteredParticipants.length.toLocaleString("vi-VN")} /{" "}
-                {participants.length.toLocaleString("vi-VN")} người tham gia.
+                {hasActiveFilters
+                  ? `Đang hiển thị ${filteredParticipants.length.toLocaleString("vi-VN")} / ${participants.length.toLocaleString("vi-VN")} người tham gia`
+                  : `${participants.length.toLocaleString("vi-VN")} người tham gia`}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <SeminarExportFieldSelector
+                selectedFields={selectedExportFields}
+                onChange={setSelectedExportFields}
+              />
               <button
                 type="button"
-                disabled={Boolean(exportingScope)}
+                disabled={
+                  selectedExportFields.length === 0 || Boolean(exportingScope)
+                }
                 onClick={() => handleExport("ALL")}
-                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {exportingScope === "ALL" ? (
                   <Loader2 size={17} className="animate-spin" />
@@ -226,9 +271,11 @@ export default function SeminarParticipantsPage() {
               </button>
               <button
                 type="button"
-                disabled={Boolean(exportingScope)}
+                disabled={
+                  selectedExportFields.length === 0 || Boolean(exportingScope)
+                }
                 onClick={() => handleExport("FILTERED")}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {exportingScope === "FILTERED" ? (
                   <Loader2 size={17} className="animate-spin" />
@@ -241,6 +288,12 @@ export default function SeminarParticipantsPage() {
               </button>
             </div>
           </div>
+
+          {selectedExportFields.length === 0 && (
+            <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700">
+              Vui lòng chọn ít nhất 1 trường để xuất.
+            </div>
+          )}
 
           {exportError && (
             <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">

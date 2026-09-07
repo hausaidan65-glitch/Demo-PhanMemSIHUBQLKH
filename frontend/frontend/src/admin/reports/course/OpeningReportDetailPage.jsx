@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Download, Eye, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import courseReportApi from "../../../services/courseReportApi";
 import StudentReportFilters from "./StudentReportFilters";
+import TrainingExportFieldSelector from "./TrainingExportFieldSelector";
+import { DEFAULT_TRAINING_EXPORT_FIELDS } from "./trainingExportFields";
 
 const PAGE_SIZE = 10;
 const INITIAL_STUDENT_FILTERS = {
@@ -105,7 +107,7 @@ function getUniqueOptions(students, field) {
 function getExportPeriodParams(search) {
   const searchParams = new URLSearchParams(search);
 
-  return ["year", "quarter", "month"].reduce((params, name) => {
+  return ["year", "quarter", "month", "week"].reduce((params, name) => {
     if (searchParams.has(name)) {
       params[name] = searchParams.get(name);
     }
@@ -266,6 +268,9 @@ export default function OpeningReportDetailPage() {
   const [error, setError] = useState("");
   const [exportingScope, setExportingScope] = useState(null);
   const [exportError, setExportError] = useState("");
+  const [selectedExportFields, setSelectedExportFields] = useState(() => [
+    ...DEFAULT_TRAINING_EXPORT_FIELDS,
+  ]);
   const requestIdRef = useRef(0);
 
   const loadStudents = useCallback(async () => {
@@ -451,7 +456,7 @@ export default function OpeningReportDetailPage() {
   };
 
   const handleExportStudents = async (scope) => {
-    if (exportingScope) {
+    if (exportingScope || selectedExportFields.length === 0) {
       return;
     }
 
@@ -461,6 +466,7 @@ export default function OpeningReportDetailPage() {
     try {
       const params = {
         scope,
+        fields: selectedExportFields.join(","),
         ...getExportPeriodParams(currentSearch),
         ...(scope === "FILTERED"
           ? getActiveExportFilters(studentFilters)
@@ -621,19 +627,54 @@ export default function OpeningReportDetailPage() {
               onReset={handleResetStudentFilters}
             />
 
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-600">
+            <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="shrink-0">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Kết quả hiển thị</p>
+              <p className="mt-1 text-lg font-bold text-slate-900" aria-live="polite">
                 {hasActiveFilters
-                  ? `Kết quả lọc: ${filteredStudentCount} / ${totalStudents} học viên`
-                  : `Tổng cộng ${totalStudents} học viên`}
+                  ? `Đang hiển thị ${formatNumber(filteredStudentCount)} / ${formatNumber(totalStudents)} học viên`
+                  : `${formatNumber(totalStudents)} học viên`}
               </p>
+              </div>
 
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
+                <div className="mb-1 flex items-center gap-2 text-sm font-bold text-emerald-900">
+                  <FileSpreadsheet size={18} />
+                  Xuất danh sách Excel
+                </div>
+                <p className="mb-3 text-xs text-emerald-800">Chọn trường dữ liệu, sau đó xuất kết quả lọc hoặc toàn bộ lớp.</p>
               <div className="flex flex-wrap items-center gap-2">
+                <TrainingExportFieldSelector
+                  selectedFields={selectedExportFields}
+                  onChange={setSelectedExportFields}
+                />
                 <button
                   type="button"
-                  disabled={filteredStudentCount === 0 || exportingScope !== null}
+                  disabled={
+                    totalStudents === 0 ||
+                    selectedExportFields.length === 0 ||
+                    exportingScope !== null
+                  }
+                  onClick={() => handleExportStudents("ALL")}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingScope === "ALL" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Download size={16} />
+                  )}
+                  {exportingScope === "ALL" ? "Đang xuất..." : "Xuất tất cả"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    filteredStudentCount === 0 ||
+                    selectedExportFields.length === 0 ||
+                    exportingScope !== null
+                  }
                   onClick={() => handleExportStudents("FILTERED")}
-                  className="inline-flex items-center gap-2 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {exportingScope === "FILTERED" ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -641,27 +682,18 @@ export default function OpeningReportDetailPage() {
                     <Download size={16} />
                   )}
                   {exportingScope === "FILTERED"
-                    ? "Đang xuất kết quả..."
-                    : "Xuất kết quả lọc"}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={totalStudents === 0 || exportingScope !== null}
-                  onClick={() => handleExportStudents("ALL")}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {exportingScope === "ALL" ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Download size={16} />
-                  )}
-                  {exportingScope === "ALL"
-                    ? "Đang xuất toàn bộ..."
-                    : "Xuất toàn bộ lớp"}
+                    ? "Đang xuất..."
+                    : "Xuất theo bộ lọc"}
                 </button>
               </div>
+              </div>
             </div>
+
+            {selectedExportFields.length === 0 && (
+              <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700">
+                Vui lòng chọn ít nhất 1 trường để xuất.
+              </div>
+            )}
 
             {exportError && (
               <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">

@@ -1,4 +1,14 @@
 const NetworkingReportModel = require("../models/networkingReportModel");
+const { resolveReportPeriod } = require("../utils/reportPeriod");
+const NetworkingParticipantExportService = require(
+  "../services/networkingReport/networkingParticipantExportService",
+);
+const NetworkingSummaryReportExportService = require(
+  "../services/networkingReport/networkingSummaryReportExportService",
+);
+const NetworkingEventListExportService = require(
+  "../services/networkingReport/networkingEventListExportService",
+);
 
 class NetworkingReportController {
   static validationError(message) {
@@ -112,14 +122,35 @@ class NetworkingReportController {
       year: period.year,
       quarter: period.quarter,
       month: period.month,
+      week: period.week,
       start_date: period.start_date,
       end_date: period.end_date,
     };
   }
 
+  static parsePositiveId(value, name) {
+    const rawValue = String(value ?? "").trim();
+
+    if (!/^\d+$/.test(rawValue)) {
+      throw NetworkingReportController.validationError(
+        `${name} phải là số nguyên dương.`,
+      );
+    }
+
+    const parsedValue = Number(rawValue);
+
+    if (!Number.isSafeInteger(parsedValue) || parsedValue <= 0) {
+      throw NetworkingReportController.validationError(
+        `${name} phải là số nguyên dương.`,
+      );
+    }
+
+    return parsedValue;
+  }
+
   static async summary(req, res) {
     try {
-      const period = NetworkingReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query, { includeTime: true });
       const summary = await NetworkingReportModel.getSummary(period);
 
       return res.json({
@@ -146,9 +177,45 @@ class NetworkingReportController {
     }
   }
 
+  static async exportSummary(req, res) {
+    try {
+      const period = resolveReportPeriod(req.query, { includeTime: true });
+      const [summary, events] = await Promise.all([
+        NetworkingReportModel.getSummary(period),
+        NetworkingReportModel.getEvents(period),
+      ]);
+      const workbook = NetworkingSummaryReportExportService.buildWorkbook({
+        period,
+        summary,
+        events,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        NetworkingSummaryReportExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${NetworkingSummaryReportExportService.buildFilename(period)}"`,
+      );
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.error("Lỗi xuất báo cáo tổng quan Sự kiện kết nối:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể xuất báo cáo tổng quan Sự kiện kết nối.",
+      });
+    }
+  }
+
   static async events(req, res) {
     try {
-      const period = NetworkingReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query, { includeTime: true });
       const events = await NetworkingReportModel.getEvents(period);
 
       return res.json({
@@ -171,6 +238,196 @@ class NetworkingReportController {
       return res.status(500).json({
         success: false,
         message: "Không thể tải danh sách báo cáo Sự kiện kết nối.",
+      });
+    }
+  }
+
+  static async exportEvents(req, res) {
+    try {
+      const period = resolveReportPeriod(req.query, { includeTime: true });
+      const options = NetworkingEventListExportService.parseExportQuery(req.query);
+      const sourceEvents = await NetworkingReportModel.getEvents(period);
+      const events = NetworkingEventListExportService.filterEvents(
+        sourceEvents,
+        options.scope,
+        options.filters,
+      );
+      const workbook = NetworkingEventListExportService.buildWorkbook({
+        period,
+        events,
+        ...options,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        NetworkingEventListExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${NetworkingEventListExportService.buildFilename(
+          period,
+          options.scope,
+        )}"`,
+      );
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+      console.error("Lỗi xuất danh sách Sự kiện kết nối:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể xuất danh sách Sự kiện kết nối.",
+      });
+    }
+  }
+
+  static async eventParticipants(req, res) {
+    try {
+      const eventId = NetworkingReportController.parsePositiveId(
+        req.params.eventId,
+        "ID sự kiện",
+      );
+      const event = await NetworkingReportModel.findEventById(eventId);
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy sự kiện kết nối.",
+        });
+      }
+
+      const participants =
+        await NetworkingReportModel.getEventParticipants(eventId);
+
+      return res.json({
+        success: true,
+        data: {
+          event,
+          participants,
+        },
+      });
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      console.error("Lỗi lấy người tham gia Sự kiện kết nối:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Không thể tải danh sách người tham gia Sự kiện kết nối.",
+      });
+    }
+  }
+
+  static async eventParticipantDetail(req, res) {
+    try {
+      const eventId = NetworkingReportController.parsePositiveId(
+        req.params.eventId,
+        "ID sự kiện",
+      );
+      const participantId = NetworkingReportController.parsePositiveId(
+        req.params.participantId,
+        "ID người tham gia",
+      );
+      const event = await NetworkingReportModel.findEventById(eventId);
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy sự kiện kết nối.",
+        });
+      }
+
+      const participant =
+        await NetworkingReportModel.getEventParticipantDetail(
+          eventId,
+          participantId,
+        );
+
+      if (!participant) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người tham gia trong sự kiện kết nối.",
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          event,
+          participant,
+        },
+      });
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      console.error("Lỗi lấy chi tiết người tham gia Sự kiện kết nối:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Không thể tải chi tiết người tham gia Sự kiện kết nối.",
+      });
+    }
+  }
+
+  static async exportEventParticipants(req, res) {
+    try {
+      const eventId = NetworkingReportController.parsePositiveId(
+        req.params.eventId,
+        "ID sự kiện",
+      );
+      const options = NetworkingParticipantExportService.parseExportQuery(
+        req.query,
+      );
+      const event = await NetworkingReportModel.findEventByIdForPeriod(
+        eventId,
+        options.period,
+      );
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy sự kiện kết nối trong kỳ báo cáo.",
+        });
+      }
+
+      const participants =
+        await NetworkingReportModel.getEventParticipants(eventId);
+      const result = await NetworkingParticipantExportService.buildExport({
+        event,
+        participants,
+        options,
+      });
+
+      res.setHeader(
+        "Content-Type",
+        NetworkingParticipantExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${result.filename}"`,
+      );
+      return res.send(result.buffer);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.error("Lỗi xuất người tham gia Sự kiện kết nối:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể xuất danh sách người tham gia Sự kiện kết nối.",
       });
     }
   }

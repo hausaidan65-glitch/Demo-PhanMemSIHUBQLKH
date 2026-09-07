@@ -1,6 +1,12 @@
 const CourseClassProgressModel = require(
   "../models/courseClassProgressModel",
 );
+const {
+  PROGRESS_TYPES,
+  cleanupFiles,
+  createProgressWithAttachments,
+  hydrateHistory,
+} = require("../services/progressAttachmentService");
 
 class CourseClassProgressController {
   static validationError(message) {
@@ -81,7 +87,10 @@ class CourseClassProgressController {
         });
       }
 
-      const history = await CourseClassProgressModel.getHistory(openingId);
+      const history = await hydrateHistory(
+        PROGRESS_TYPES.TRAINING,
+        await CourseClassProgressModel.getHistory(openingId),
+      );
 
       return res.json({
         success: true,
@@ -111,6 +120,7 @@ class CourseClassProgressController {
         await CourseClassProgressController.findActiveOpening(openingId);
 
       if (!opening) {
+        await cleanupFiles(req.files);
         return res.status(404).json({
           success: false,
           message: "Không tìm thấy đợt tổ chức.",
@@ -120,17 +130,27 @@ class CourseClassProgressController {
       const createdBy = Number(req.admin?.id);
 
       if (!Number.isSafeInteger(createdBy) || createdBy <= 0) {
+        await cleanupFiles(req.files);
         return res.status(401).json({
           success: false,
           message: "Thông tin quản trị viên không hợp lệ.",
         });
       }
 
-      const progress = await CourseClassProgressModel.createProgress({
-        openingId,
-        content: payload.content,
-        note: payload.note,
-        createdBy,
+      const progress = await createProgressWithAttachments({
+        progressType: PROGRESS_TYPES.TRAINING,
+        files: req.files,
+        uploadedBy: createdBy,
+        createProgress: (connection) =>
+          CourseClassProgressModel.createProgress(
+            {
+              openingId,
+              content: payload.content,
+              note: payload.note,
+              createdBy,
+            },
+            connection,
+          ),
       });
 
       return res.status(201).json({
@@ -142,6 +162,7 @@ class CourseClassProgressController {
         },
       });
     } catch (error) {
+      await cleanupFiles(req.files);
       return CourseClassProgressController.handleError(
         res,
         error,

@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { TrendingUp, BookOpen, Users, Layers } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -18,44 +16,28 @@ import {
 } from "recharts";
 
 import WelcomeCard from "../../components/WelcomeCard";
-import StatCard from "../../components/StatCard";
-import RecentRegistrations from "../../components/RecentRegistrations";
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+import { getDashboard } from "../../services/dashboardApi";
 
-const getAuthConfig = () => ({
-  headers: {
-    Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
-  },
-});
 const COLORS = ["#16a34a", "#2563eb", "#f59e0b", "#dc2626"];
 
+const EMPTY_STATS = {
+  courses: { total: 0 },
+  classes: { total: 0 },
+  registrations: { total: 0 },
+  todayRegistrations: { total: 0 },
+  charts: {
+    registrationTrend: [],
+    topCourses: [],
+    classStatus: [],
+    programRanking: [],
+  },
+  overview: {},
+};
+
 const Dashboard = () => {
-  const [stats, setStats] = useState({
-    courses: {
-      total: 0,
-    },
-
-    classes: {
-      total: 0,
-    },
-
-    registrations: {
-      total: 0,
-    },
-
-    todayRegistrations: {
-      total: 0,
-    },
-
-    charts: {
-      registrationTrend: [],
-      topCourses: [],
-      classStatus: [],
-      programRanking: [],
-    },
-  });
-
+  const [stats, setStats] = useState(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const shortName = (text) => {
     const value = String(text || "");
 
@@ -66,51 +48,34 @@ const Dashboard = () => {
     return value;
   };
   useEffect(() => {
+    let active = true;
+
+    const fetchDashboard = async () => {
+      try {
+        const res = await getDashboard();
+
+        if (active) {
+          setStats(res.data?.data || EMPTY_STATS);
+          setError("");
+        }
+      } catch {
+        if (active) {
+          setStats(EMPTY_STATS);
+          setError("Không thể tải dữ liệu Dashboard.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
     fetchDashboard();
+
+    return () => {
+      active = false;
+    };
   }, []);
-
-  const fetchDashboard = async () => {
-    try {
-      setLoading(true);
-
-      const res = await axios.get(`${API_BASE}/api/dashboard`, getAuthConfig());
-
-      setStats(
-        res.data?.data || {
-          courses: {
-            total: 0,
-          },
-
-          classes: {
-            total: 0,
-          },
-
-          registrations: {
-            total: 0,
-          },
-
-          todayRegistrations: {
-            total: 0,
-          },
-
-          charts: {
-            registrationTrend: [],
-            topCourses: [],
-            classStatus: [],
-            programRanking: [],
-          },
-        },
-      );
-    } catch (error) {
-      console.error("Dashboard error:", {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
   if (loading) {
     return (
       <div
@@ -128,6 +93,20 @@ const Dashboard = () => {
   }
 
   const charts = stats.charts || {};
+  const overview = stats.overview || {};
+  const startupConnectionDay = overview.startup_connection_day || {};
+  const lifecycleChartData = [
+    { name: "Khóa đào tạo", ...overview.training },
+    { name: "Hội thảo", ...startupConnectionDay.seminars },
+    { name: "Triển lãm", ...startupConnectionDay.exhibitions },
+    { name: "Sự kiện kết nối", ...overview.networking },
+  ].map((item) => ({
+    name: item.name,
+    finished: Number(item.finished) || 0,
+    ongoing: Number(item.ongoing) || 0,
+    upcoming: Number(item.upcoming) || 0,
+    missing: Number(item.missing_official_dates) || 0,
+  }));
 
   return (
     <div
@@ -137,41 +116,100 @@ const Dashboard = () => {
     >
       <WelcomeCard />
 
-      {/* STAT CARD */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Tổng quan SIHUB</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Số liệu toàn thời gian theo dữ liệu hiện có trong hệ thống.
+          </p>
+        </div>
 
-      <div
-        className="
-        grid
-        grid-cols-1
-        md:grid-cols-2
-        xl:grid-cols-4
-        gap-6
-        "
-      >
-        <StatCard
-          title="Khóa học"
-          value={stats.courses.total}
-          color="bg-green-600"
-        />
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
-        <StatCard
-          title="Lớp học"
-          value={stats.classes.total}
-          color="bg-emerald-600"
-        />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <DashboardModuleCard
+            title="Khóa đào tạo"
+            metrics={[
+              ["Khóa học", overview.training?.total_courses],
+              ["Đợt tổ chức", overview.training?.total_openings],
+              ["Đăng ký hợp lệ", overview.training?.valid_registrations],
+              ["Đăng ký hôm nay", stats.todayRegistrations?.total],
+            ]}
+            lifecycle={overview.training}
+          />
+          <DashboardModuleCard
+            title="Hội thảo"
+            metrics={[
+              ["Tổng hội thảo", startupConnectionDay.seminars?.total_events],
+              ["Lượt tham gia", startupConnectionDay.seminars?.total_participants],
+            ]}
+            lifecycle={startupConnectionDay.seminars}
+          />
+          <DashboardModuleCard
+            title="Triển lãm / Startup Connection Day"
+            metrics={[
+              ["Tổng triển lãm", startupConnectionDay.exhibitions?.total_events],
+              ["Phản hồi khảo sát", startupConnectionDay.exhibitions?.survey_responses],
+            ]}
+            lifecycle={startupConnectionDay.exhibitions}
+          />
+          <DashboardModuleCard
+            title="Sự kiện kết nối"
+            metrics={[
+              ["Tổng sự kiện", overview.networking?.total_events],
+              ["Đăng ký hợp lệ", overview.networking?.valid_registrations],
+            ]}
+            lifecycle={overview.networking}
+          />
+          <DashboardModuleCard
+            title="Ươm tạo"
+            metrics={[
+              ["Tổng chương trình", overview.incubation?.total_programs],
+              ["Tổng hồ sơ", overview.incubation?.total_profiles],
+              ["Đang xét duyệt", overview.incubation?.under_review_profiles],
+              ["Hồ sơ được duyệt", overview.incubation?.approved_profiles],
+            ]}
+          />
+        </div>
+      </section>
 
-        <StatCard
-          title="Học viên đăng ký"
-          value={stats.registrations.total}
-          color="bg-green-500"
-        />
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold text-slate-800">Phân tích hoạt động</h2>
 
-        <StatCard
-          title="Đăng ký hôm nay"
-          value={stats.todayRegistrations.total}
-          color="bg-lime-600"
-        />
-      </div>
+        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.05)]">
+          <h3 className="mb-2 text-xl font-bold text-slate-800">
+            Tình hình tổ chức các hoạt động
+          </h3>
+          <p className="mb-6 text-sm text-slate-500">
+            Tổng hợp tình trạng tổ chức của các hoạt động trong hệ thống SIHUB.
+          </p>
+
+          <div className="h-[360px] w-full">
+            <ResponsiveContainer>
+              <BarChart
+                data={lifecycleChartData}
+                margin={{ top: 10, right: 20, left: 0, bottom: 20 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="finished" name="Đã kết thúc" stackId="lifecycle" fill="#15803d" />
+                <Bar dataKey="ongoing" name="Đang diễn ra" stackId="lifecycle" fill="#2563eb" />
+                <Bar dataKey="upcoming" name="Sắp tổ chức" stackId="lifecycle" fill="#f59e0b" />
+                <Bar dataKey="missing" name="Thiếu thời gian" stackId="lifecycle" fill="#94a3b8" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
+      <h2 className="text-2xl font-bold text-slate-800">Đào tạo</h2>
 
       {/* CHART 1 */}
 
@@ -391,110 +429,52 @@ p-6
         </div>
       </div>
 
-      {/* BOTTOM */}
-
-      <div
-        className="
-        grid
-        grid-cols-1
-        xl:grid-cols-3
-        gap-6
-        "
-      >
-        <div
-          className="
-          xl:col-span-2
-          bg-white
-          rounded-3xl
-          border
-          border-slate-100
-          shadow-[0_8px_30px_rgb(0,0,0,0.05)]
-          p-6
-          "
-        >
-          <h2
-            className="
-            text-xl
-            font-bold
-            mb-5
-            "
-          >
-            Đăng ký gần đây
-          </h2>
-
-          <RecentRegistrations />
-        </div>
-
-        <div
-          className="
-          bg-white
-          rounded-3xl
-          border
-          border-slate-100
-          shadow-[0_8px_30px_rgb(0,0,0,0.05)]
-          p-6
-          "
-        >
-          <h2
-            className="
-            text-xl
-            font-bold
-            "
-          >
-            Tổng quan hệ thống
-          </h2>
-
-          <div
-            className="
-            mt-6
-            space-y-4
-            "
-          >
-            <OverviewItem label="Tổng khóa học" value={stats.courses.total} />
-
-            <OverviewItem label="Tổng lớp học" value={stats.classes.total} />
-
-            <OverviewItem
-              label="Tổng học viên"
-              value={stats.registrations.total}
-            />
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
 
-function OverviewItem({ label, value }) {
-  return (
-    <div
-      className="
-flex
-justify-between
-items-center
-bg-green-50
-rounded-2xl
-px-4
-py-3
-"
-    >
-      <span
-        className="
-text-slate-600
-text-sm
-"
-      >
-        {label}
-      </span>
+function DashboardModuleCard({ title, metrics, lifecycle }) {
+  const missingDates = Number(lifecycle?.missing_official_dates) || 0;
 
-      <span
-        className="
-font-bold
-text-green-700
-"
-      >
-        {value}
-      </span>
+  return (
+    <article className="flex h-full flex-col rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.05)]">
+      <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {metrics.map(([label, value]) => (
+          <div key={label} className="rounded-2xl bg-slate-50 px-3 py-3">
+            <div className="text-xs font-medium text-slate-500">{label}</div>
+            <div className="mt-1 text-2xl font-bold text-slate-800">
+              {Number(value) || 0}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {lifecycle && (
+        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 text-center">
+          <LifecycleItem label="Đã kết thúc" value={lifecycle.finished} />
+          <LifecycleItem label="Đang diễn ra" value={lifecycle.ongoing} />
+          <LifecycleItem label="Sắp tổ chức" value={lifecycle.upcoming} />
+        </div>
+      )}
+
+      {missingDates > 0 && (
+        <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+          {missingDates} mục thiếu thời gian tổ chức chính thức
+        </p>
+      )}
+    </article>
+  );
+}
+
+function LifecycleItem({ label, value }) {
+  return (
+    <div>
+      <div className="text-lg font-bold text-emerald-700">
+        {Number(value) || 0}
+      </div>
+      <div className="text-xs text-slate-500">{label}</div>
     </div>
   );
 }

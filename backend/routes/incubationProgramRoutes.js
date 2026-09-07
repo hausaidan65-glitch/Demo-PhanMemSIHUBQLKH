@@ -6,6 +6,9 @@ const IncubationProgramController = require("../controllers/incubationProgramCon
 const IncubationProgramProgressController = require(
   "../controllers/incubationProgramProgressController",
 );
+const {
+  uploadProgressAttachments,
+} = require("../middleware/uploadProgressAttachments");
 const AuthMiddleware = require("../middleware/authMiddleware");
 
 const RoleMiddleware = require("../middleware/roleMiddleware");
@@ -47,6 +50,7 @@ router.post(
   verifyToken,
   allowAdmin,
   allowIncubation,
+  uploadProgressAttachments,
   IncubationProgramProgressController.store,
 );
 

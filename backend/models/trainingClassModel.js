@@ -260,6 +260,39 @@ c.status,
       total_students: Number(item.total_students) || 0,
     }));
   }
+  static async countUniqueConfirmedStudents(courseIds = []) {
+    const normalizedCourseIds = courseIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (normalizedCourseIds.length === 0) {
+      return 0;
+    }
+
+    const placeholders = normalizedCourseIds.map(() => "?").join(", ");
+    const [rows] = await db.query(
+      `
+        SELECT COUNT(DISTINCT r.user_id) AS total
+
+        FROM registrations r
+
+        INNER JOIN course_classes cc
+          ON cc.id = r.class_id
+         AND cc.deleted_at IS NULL
+
+        INNER JOIN courses c
+          ON c.id = cc.course_id
+         AND c.deleted_at IS NULL
+
+        WHERE c.id IN (${placeholders})
+          AND r.register_status = 'CONFIRMED'
+          AND r.user_id IS NOT NULL
+      `,
+      normalizedCourseIds,
+    );
+
+    return Number(rows[0]?.total) || 0;
+  }
   // =========================================================
   // XUẤT DỮ LIỆU LỚP HỌC THEO ĐÚNG BỘ LỌC
   //

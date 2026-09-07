@@ -3,6 +3,13 @@ import apiClient from "./apiClient";
 const COURSE_REPORT_PATH = "/reports/courses";
 
 const courseReportApi = {
+  exportSummary(params) {
+    return apiClient.get(`${COURSE_REPORT_PATH}/export`, {
+      params,
+      responseType: "blob",
+    });
+  },
+
   getSummary(params) {
     return apiClient.get(`${COURSE_REPORT_PATH}/summary`, { params });
   },
@@ -22,6 +29,13 @@ const courseReportApi = {
     return apiClient.get(`${COURSE_REPORT_PATH}/courses/${courseId}/openings`, {
       params,
     });
+  },
+
+  exportCourseOpenings(courseId, params) {
+    return apiClient.get(
+      `${COURSE_REPORT_PATH}/courses/${courseId}/openings/export`,
+      { params, responseType: "blob" },
+    );
   },
 
   getOpeningStudents(openingId) {

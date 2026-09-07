@@ -71,8 +71,8 @@ class NetworkingEventProgressModel {
     return rows.map((row) => this.normalizeProgress(row));
   }
 
-  static async findProgressById(progressId) {
-    const [rows] = await db.query(
+  static async findProgressById(progressId, executor = db) {
+    const [rows] = await executor.query(
       `
       ${this.progressSelectSql()}
       WHERE progress.id = ?
@@ -84,8 +84,11 @@ class NetworkingEventProgressModel {
     return rows.length ? this.normalizeProgress(rows[0]) : null;
   }
 
-  static async createProgress({ eventId, content, note, createdBy }) {
-    const [result] = await db.query(
+  static async createProgress(
+    { eventId, content, note, createdBy },
+    executor = db,
+  ) {
+    const [result] = await executor.query(
       `
       INSERT INTO networking_event_progress_reports
         (event_id, content, note, created_by, report_time)
@@ -94,7 +97,7 @@ class NetworkingEventProgressModel {
       [eventId, content, note, createdBy],
     );
 
-    return this.findProgressById(result.insertId);
+    return this.findProgressById(result.insertId, executor);
   }
 }
 

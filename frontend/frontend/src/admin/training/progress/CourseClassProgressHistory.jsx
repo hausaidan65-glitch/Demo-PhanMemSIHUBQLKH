@@ -1,3 +1,5 @@
+import ProgressAttachments from '../../progress/ProgressAttachments';
+
 function formatProgressDateTime(value) {
   if (!value) return 'Không xác định';
 
@@ -59,6 +61,8 @@ export default function CourseClassProgressHistory({ history }) {
               </p>
             </div>
           )}
+
+          <ProgressAttachments attachments={entry.attachments} />
         </article>
       ))}
     </div>

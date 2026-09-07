@@ -44,11 +44,18 @@ class TrainingClassController {
   static async index(req, res) {
     try {
       const data = await TrainingClassModel.getAll(req.query);
+      const uniqueConfirmedStudents =
+        await TrainingClassModel.countUniqueConfirmedStudents(
+          data.map((item) => item.id),
+        );
 
       return res.status(200).json({
         success: true,
         total: data.length,
         data,
+        summary: {
+          unique_confirmed_students: uniqueConfirmedStudents,
+        },
       });
     } catch (error) {
       console.error("Lỗi lấy danh sách lớp học:", error);

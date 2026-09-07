@@ -10,6 +10,9 @@ const ScopeMiddleware = require("../middleware/scopeMiddleware");
 const StartupConnectionProgressController = require(
   "../controllers/startupConnectionProgressController",
 );
+const {
+  uploadProgressAttachments,
+} = require("../middleware/uploadProgressAttachments");
 
 const {
   getEvents,
@@ -104,6 +107,7 @@ router.post(
   verifyToken,
   allowAdmin,
   allowEvent,
+  uploadProgressAttachments,
   StartupConnectionProgressController.store,
 );
 

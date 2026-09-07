@@ -1,6 +1,13 @@
 const EventReportModel = require("../models/eventReportModel");
+const { resolveReportPeriod } = require("../utils/reportPeriod");
 const SeminarParticipantExportService = require(
   "../services/eventReport/seminarParticipantExportService",
+);
+const SeminarSummaryReportExportService = require(
+  "../services/eventReport/seminarSummaryReportExportService",
+);
+const SeminarListReportExportService = require(
+  "../services/eventReport/seminarListReportExportService",
 );
 
 class EventReportController {
@@ -115,7 +122,7 @@ class EventReportController {
 
   static async seminarSummary(req, res) {
     try {
-      const period = EventReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query, { includeTime: true });
       const summary = await EventReportModel.getSeminarSummary(period);
 
       return res.json({
@@ -142,9 +149,43 @@ class EventReportController {
     }
   }
 
+  static async exportSeminarSummary(req, res) {
+    try {
+      const period = resolveReportPeriod(req.query, { includeTime: true });
+      const [summary, seminars] = await Promise.all([
+        EventReportModel.getSeminarSummary(period),
+        EventReportModel.getSeminars(period),
+      ]);
+      const workbook = SeminarSummaryReportExportService.buildWorkbook({
+        period,
+        summary,
+        seminars,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        SeminarSummaryReportExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${SeminarSummaryReportExportService.buildFilename(period)}"`,
+      );
+
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      return EventReportController.handleError(
+        res,
+        error,
+        "Lỗi xuất báo cáo tổng quan Hội thảo:",
+        "Không thể xuất báo cáo tổng quan Hội thảo.",
+      );
+    }
+  }
+
   static async seminars(req, res) {
     try {
-      const period = EventReportController.resolvePeriod(req.query);
+      const period = resolveReportPeriod(req.query, { includeTime: true });
       const seminars = await EventReportModel.getSeminars(period);
 
       return res.json({
@@ -160,6 +201,46 @@ class EventReportController {
         error,
         "Lỗi lấy danh sách báo cáo Hội thảo:",
         "Không thể tải danh sách báo cáo Hội thảo.",
+      );
+    }
+  }
+
+  static async exportSeminarList(req, res) {
+    try {
+      const period = resolveReportPeriod(req.query, { includeTime: true });
+      const options = SeminarListReportExportService.parseExportQuery(req.query);
+      const sourceSeminars = await EventReportModel.getSeminars(period);
+      const seminars = SeminarListReportExportService.filterSeminars(
+        sourceSeminars,
+        options.scope,
+        options.filters,
+      );
+      const workbook = SeminarListReportExportService.buildWorkbook({
+        period,
+        seminars,
+        sourceSeminars,
+        ...options,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Type",
+        SeminarListReportExportService.XLSX_CONTENT_TYPE,
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${SeminarListReportExportService.buildFilename(
+          period,
+          options.scope,
+        )}"`,
+      );
+      return res.send(Buffer.from(buffer));
+    } catch (error) {
+      return EventReportController.handleError(
+        res,
+        error,
+        "Lỗi xuất danh sách báo cáo Hội thảo:",
+        "Không thể xuất danh sách báo cáo Hội thảo.",
       );
     }
   }

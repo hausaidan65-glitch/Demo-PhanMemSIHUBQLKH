@@ -20,6 +20,9 @@ const {
 const NetworkingEventProgressController = require(
   "../controllers/networkingEventProgressController",
 );
+const {
+  uploadProgressAttachments,
+} = require("../middleware/uploadProgressAttachments");
 const AuthMiddleware = require("../middleware/authMiddleware");
 
 const RoleMiddleware = require("../middleware/roleMiddleware");
@@ -51,6 +54,7 @@ router.post(
   verifyToken,
   allowAdmin,
   allowEvent,
+  uploadProgressAttachments,
   NetworkingEventProgressController.store,
 );
 

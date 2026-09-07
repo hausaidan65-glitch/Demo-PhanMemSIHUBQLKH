@@ -71,8 +71,8 @@ class IncubationProgramProgressModel {
     return rows.map((row) => this.normalizeProgress(row));
   }
 
-  static async findProgressById(progressId) {
-    const [rows] = await db.query(
+  static async findProgressById(progressId, executor = db) {
+    const [rows] = await executor.query(
       `
       ${this.progressSelectSql()}
       WHERE progress.id = ?
@@ -84,8 +84,11 @@ class IncubationProgramProgressModel {
     return rows.length ? this.normalizeProgress(rows[0]) : null;
   }
 
-  static async createProgress({ programId, content, note, createdBy }) {
-    const [result] = await db.query(
+  static async createProgress(
+    { programId, content, note, createdBy },
+    executor = db,
+  ) {
+    const [result] = await executor.query(
       `
       INSERT INTO incubation_program_progress_reports
         (program_id, content, note, created_by, report_time)
@@ -94,7 +97,7 @@ class IncubationProgramProgressModel {
       [programId, content, note, createdBy],
     );
 
-    return this.findProgressById(result.insertId);
+    return this.findProgressById(result.insertId, executor);
   }
 }
 

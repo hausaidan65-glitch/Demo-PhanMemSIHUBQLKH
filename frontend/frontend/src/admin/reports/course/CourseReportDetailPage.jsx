@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Eye, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileSpreadsheet, Loader2 } from "lucide-react";
 import {
   useLocation,
   useNavigate,
@@ -9,6 +9,9 @@ import {
 
 import courseReportApi from "../../../services/courseReportApi";
 import CourseOpeningFilters from "./CourseOpeningFilters";
+import TrainingOpeningExportFieldSelector from "./TrainingOpeningExportFieldSelector";
+import { DEFAULT_TRAINING_OPENING_EXPORT_FIELDS } from "./trainingOpeningExportFields";
+import { isValidIsoWeek } from "../reportPeriodUtils";
 
 const COURSE_SUMMARY_ITEMS = [
   { key: "total_openings", label: "Tổng lớp / đợt tổ chức" },
@@ -51,10 +54,11 @@ function resolvePeriod(searchParams) {
       : currentYear;
   const rawQuarter = searchParams.get("quarter");
   const rawMonth = searchParams.get("month");
+  const rawWeek = searchParams.get("week");
 
-  if (rawQuarter !== null && rawMonth !== null) {
+  if ([rawQuarter, rawMonth, rawWeek].filter((value) => value !== null).length > 1) {
     return {
-      error: "Không được sử dụng đồng thời bộ lọc quý và tháng.",
+      error: "Chỉ được chọn một trong các kỳ quý, tháng hoặc tuần.",
       params: null,
     };
   }
@@ -77,6 +81,14 @@ function resolvePeriod(searchParams) {
     }
 
     return { error: "", params: { year, month } };
+  }
+
+  if (rawWeek !== null) {
+    const week = Number(rawWeek);
+    if (!/^\d+$/.test(rawWeek) || !isValidIsoWeek(year, week)) {
+      return { error: "Tuần báo cáo không hợp lệ.", params: null };
+    }
+    return { error: "", params: { year, week } };
   }
 
   return { error: "", params: { year } };
@@ -152,6 +164,27 @@ function matchesPresence(value, filter) {
   return filter === "HAS" ? safeCount > 0 : safeCount === 0;
 }
 
+function getDownloadFilename(contentDisposition) {
+  const match = String(contentDisposition || "").match(
+    /filename\s*=\s*(?:"([^"]+)"|([^;\s]+))/i,
+  );
+  return String(match?.[1] || match?.[2] || "").trim() ||
+    "SIHUB_Training_Openings.xlsx";
+}
+
+async function getExportErrorMessage(error) {
+  const errorData = error.response?.data;
+  if (errorData instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await errorData.text());
+      if (parsed?.message) return parsed.message;
+    } catch {
+      return "Không thể xuất báo cáo lớp / đợt tổ chức.";
+    }
+  }
+  return errorData?.message || "Không thể xuất báo cáo lớp / đợt tổ chức.";
+}
+
 export default function CourseReportDetailPage() {
   const { courseId: rawCourseId } = useParams();
   const [searchParams] = useSearchParams();
@@ -174,6 +207,11 @@ export default function CourseReportDetailPage() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exportingScope, setExportingScope] = useState("");
+  const [exportError, setExportError] = useState("");
+  const [selectedExportFields, setSelectedExportFields] = useState(() => [
+    ...DEFAULT_TRAINING_OPENING_EXPORT_FIELDS,
+  ]);
   const requestIdRef = useRef(0);
 
   const loadOpenings = useCallback(async () => {
@@ -340,6 +378,44 @@ export default function CourseReportDetailPage() {
     );
   };
 
+  const handleExportOpenings = async (scope) => {
+    if (exportingScope || selectedExportFields.length === 0) return;
+
+    setExportingScope(scope);
+    setExportError("");
+    try {
+      const params = {
+        ...periodResult.params,
+        scope,
+        fields: selectedExportFields.join(","),
+        ...(scope === "FILTERED" ? openingFilters : {}),
+      };
+      const response = await courseReportApi.exportCourseOpenings(
+        courseId,
+        params,
+      );
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getDownloadFilename(
+        response.headers?.["content-disposition"],
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setExportError(await getExportErrorMessage(requestError));
+    } finally {
+      setExportingScope("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <button
@@ -411,14 +487,55 @@ export default function CourseReportDetailPage() {
           )}
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h2 className="text-lg font-bold text-slate-900">
-                Lớp học / Đợt tổ chức
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                {openings.length} lớp / đợt trong kỳ báo cáo.
-              </p>
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="shrink-0">
+                <h2 className="text-lg font-bold text-slate-900">
+                  Lớp học / Đợt tổ chức
+                </h2>
+                <p className="mt-1 text-sm text-slate-500" aria-live="polite">
+                  {hasActiveOpeningFilters
+                    ? `Đang hiển thị ${filteredOpenings.length} / ${openings.length} lớp / đợt tổ chức`
+                    : `${openings.length} lớp / đợt tổ chức`}
+                </p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
+                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-emerald-900">
+                  <FileSpreadsheet size={18} />
+                  Xuất báo cáo chi tiết
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <TrainingOpeningExportFieldSelector
+                    selectedFields={selectedExportFields}
+                    onChange={setSelectedExportFields}
+                  />
+                  <button
+                    type="button"
+                    disabled={openings.length === 0 || selectedExportFields.length === 0 || Boolean(exportingScope)}
+                    onClick={() => handleExportOpenings("ALL")}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {exportingScope === "ALL" ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
+                    {exportingScope === "ALL" ? "Đang xuất..." : "Xuất tất cả"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasActiveOpeningFilters || filteredOpenings.length === 0 || selectedExportFields.length === 0 || Boolean(exportingScope)}
+                    onClick={() => handleExportOpenings("FILTERED")}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {exportingScope === "FILTERED" ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
+                    {exportingScope === "FILTERED" ? "Đang xuất..." : "Xuất theo bộ lọc"}
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {selectedExportFields.length === 0 && (
+              <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700">Vui lòng chọn ít nhất 1 trường để xuất.</div>
+            )}
+            {exportError && (
+              <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">{exportError}</div>
+            )}
 
             <CourseOpeningFilters
               filters={openingFilters}
@@ -427,12 +544,6 @@ export default function CourseReportDetailPage() {
               onChange={handleOpeningFilterChange}
               onReset={handleResetOpeningFilters}
             />
-
-            <div className="border-b border-slate-200 px-5 py-3 text-sm text-slate-600">
-              {hasActiveOpeningFilters
-                ? `Kết quả lọc: ${filteredOpenings.length} / ${openings.length} lớp / đợt tổ chức`
-                : `Tổng cộng ${openings.length} lớp / đợt tổ chức`}
-            </div>
 
             {openings.length === 0 ? (
               <div className="px-5 py-14 text-center text-sm text-slate-500">
