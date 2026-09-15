@@ -197,6 +197,48 @@ class CourseReportController {
     }
   }
 
+  static async programOverview(req, res) {
+    try {
+      const rawProgramId = String(req.params.programId);
+      if (!/^\d+$/.test(rawProgramId)) {
+        throw CourseReportController.validationError(
+          "ID nhiệm vụ khóa đào tạo phải là số nguyên dương.",
+        );
+      }
+
+      const programId = Number(rawProgramId);
+      if (!Number.isSafeInteger(programId) || programId <= 0) {
+        throw CourseReportController.validationError(
+          "ID nhiệm vụ khóa đào tạo phải là số nguyên dương.",
+        );
+      }
+
+      const filters = CourseReportController.parseProgramOverviewFilters(
+        req.query,
+      );
+      const data = await CourseReportModel.getProgramOverview(programId, filters);
+
+      if (!data) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy nhiệm vụ khóa đào tạo.",
+        });
+      }
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+
+      console.error("Lỗi lấy tổng quan nhiệm vụ khóa đào tạo:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Không thể tải tổng quan nhiệm vụ khóa đào tạo.",
+      });
+    }
+  }
+
   static async openingsByCourse(req, res) {
     try {
       const rawCourseId = String(req.params.courseId);
@@ -662,6 +704,68 @@ class CourseReportController {
       report_start: `${year}-${formatPart(startMonth)}-01`,
       report_end: `${year}-${formatPart(endMonth)}-${formatPart(endDay)}`,
     };
+  }
+
+  static parseProgramOverviewFilters(query = {}) {
+    const filters = {};
+    const stringFilters = [
+      "gender",
+      "ageGroup",
+      "userType",
+      "organization",
+      "position",
+      "projectField",
+      "startupStage",
+      "programSelectionStatus",
+      "registerStatus",
+    ];
+
+    stringFilters.forEach((name) => {
+      const value = String(query[name] ?? "").trim();
+      if (value) filters[name] = value;
+    });
+
+    if (query.courseId !== undefined && String(query.courseId).trim() !== "") {
+      if (!/^\d+$/.test(String(query.courseId))) {
+        throw CourseReportController.validationError(
+          "courseId phải là số nguyên dương.",
+        );
+      }
+      const courseId = Number(query.courseId);
+      if (!Number.isSafeInteger(courseId) || courseId <= 0) {
+        throw CourseReportController.validationError(
+          "courseId phải là số nguyên dương.",
+        );
+      }
+      filters.courseId = courseId;
+    }
+
+    if (query.openingId !== undefined && String(query.openingId).trim() !== "") {
+      if (!/^\d+$/.test(String(query.openingId))) {
+        throw CourseReportController.validationError(
+          "openingId phải là số nguyên dương.",
+        );
+      }
+      const openingId = Number(query.openingId);
+      if (!Number.isSafeInteger(openingId) || openingId <= 0) {
+        throw CourseReportController.validationError(
+          "openingId phải là số nguyên dương.",
+        );
+      }
+      filters.openingId = openingId;
+    }
+
+    if (query.hasProject !== undefined && String(query.hasProject).trim() !== "") {
+      const normalized = String(query.hasProject).trim().toLowerCase();
+      if (!["0", "1", "false", "true"].includes(normalized)) {
+        throw CourseReportController.validationError(
+          "hasProject chỉ nhận true, false, 1 hoặc 0.",
+        );
+      }
+      filters.hasProject = normalized === "1" || normalized === "true";
+    }
+
+    return filters;
   }
 
   static resolveOptionalPeriodMetadata(query = {}) {

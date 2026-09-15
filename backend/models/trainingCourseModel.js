@@ -1,6 +1,43 @@
 const db = require("../config/db");
 
+function withCanonicalMission(row) {
+  const {
+    canonical_mission_name,
+    canonical_mission_source,
+    canonical_mission_status,
+    ...trainingCourse
+  } = row;
+
+  trainingCourse.mission_id = trainingCourse.mission_id === null
+    ? null
+    : Number(trainingCourse.mission_id);
+  trainingCourse.canonical_mission = trainingCourse.mission_id === null
+    ? null
+    : {
+        id: trainingCourse.mission_id,
+        mission_name: canonical_mission_name,
+        mission_source: canonical_mission_source,
+        status: canonical_mission_status,
+      };
+  trainingCourse.year = trainingCourse.year == null
+    ? null
+    : Number(trainingCourse.year);
+
+  return trainingCourse;
+}
+
 class TrainingCourseModel {
+  static async getDistinctYears() {
+    const [rows] = await db.query(`
+      SELECT DISTINCT year
+      FROM training_programs
+      WHERE year IS NOT NULL
+      ORDER BY year DESC
+    `);
+
+    return rows.map((row) => Number(row.year));
+  }
+
   // =========================================================
   // LẤY DANH SÁCH KHÓA ĐÀO TẠO
   // =========================================================
@@ -39,6 +76,11 @@ class TrainingCourseModel {
       params.push(status);
     }
 
+    if (query.year !== undefined && query.year !== null) {
+      conditions.push(`tp.year = ?`);
+      params.push(Number(query.year));
+    }
+
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -49,14 +91,23 @@ class TrainingCourseModel {
 
       tp.program_name AS training_course_name,
       tp.description,
+      tp.year,
+      tp.mission_id,
       tp.status,
       tp.created_at,
       tp.updated_at,
+
+      m.mission_name AS canonical_mission_name,
+      m.mission_source AS canonical_mission_source,
+      m.status AS canonical_mission_status,
 
       COUNT(DISTINCT c.id) AS total_course_groups,
       COUNT(DISTINCT cc.id) AS total_classes
 
     FROM training_programs tp
+
+    LEFT JOIN missions m
+      ON m.id = tp.mission_id
 
     LEFT JOIN courses c
       ON c.program_id = tp.id
@@ -70,22 +121,31 @@ class TrainingCourseModel {
       tp.id,
       tp.program_name,
       tp.description,
+      tp.year,
+      tp.mission_id,
       tp.status,
       tp.created_at,
-      tp.updated_at
+      tp.updated_at,
+      m.mission_name,
+      m.mission_source,
+      m.status
 
     ORDER BY tp.id DESC
     `,
       params,
     );
 
-    return rows.map((item) => ({
-      ...item,
+    return rows.map((row) => {
+      const item = withCanonicalMission(row);
+
+      return {
+        ...item,
 
       total_course_groups: Number(item.total_course_groups) || 0,
 
-      total_classes: Number(item.total_classes) || 0,
-    }));
+        total_classes: Number(item.total_classes) || 0,
+      };
+    });
   }
   // =========================================================
   // DỮ LIỆU XUẤT EXCEL
@@ -104,14 +164,23 @@ class TrainingCourseModel {
 
         tp.program_name AS training_course_name,
         tp.description,
+        tp.year,
+        tp.mission_id,
         tp.status,
         tp.created_at,
         tp.updated_at,
+
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
         COUNT(DISTINCT c.id) AS total_course_groups,
         COUNT(DISTINCT cc.id) AS total_classes
 
       FROM training_programs tp
+
+      LEFT JOIN missions m
+        ON m.id = tp.mission_id
 
       LEFT JOIN courses c
         ON c.program_id = tp.id
@@ -125,9 +194,14 @@ class TrainingCourseModel {
         tp.id,
         tp.program_name,
         tp.description,
+        tp.year,
+        tp.mission_id,
         tp.status,
         tp.created_at,
-        tp.updated_at
+        tp.updated_at,
+        m.mission_name,
+        m.mission_source,
+        m.status
 
       LIMIT 1
       `,
@@ -138,12 +212,14 @@ class TrainingCourseModel {
       return null;
     }
 
+    const trainingCourse = withCanonicalMission(rows[0]);
+
     return {
-      ...rows[0],
+      ...trainingCourse,
 
-      total_course_groups: Number(rows[0].total_course_groups) || 0,
+      total_course_groups: Number(trainingCourse.total_course_groups) || 0,
 
-      total_classes: Number(rows[0].total_classes) || 0,
+      total_classes: Number(trainingCourse.total_classes) || 0,
     };
   }
 
@@ -182,13 +258,17 @@ class TrainingCourseModel {
       (
         program_name,
         description,
+        year,
+        mission_id,
         status
       )
-      VALUES (?, ?, ?)
+      VALUES (?, ?, ?, ?, ?)
       `,
       [
         data.training_course_name,
         data.description || null,
+        data.year ?? null,
+        data.mission_id ?? null,
         data.status || "ACTIVE",
       ],
     );
@@ -207,6 +287,8 @@ class TrainingCourseModel {
       SET
         program_name = ?,
         description = ?,
+        year = IF(?, ?, year),
+        mission_id = IF(?, ?, mission_id),
         status = ?
 
       WHERE id = ?
@@ -214,6 +296,10 @@ class TrainingCourseModel {
       [
         data.training_course_name,
         data.description || null,
+        data.year_provided ? 1 : 0,
+        data.year,
+        data.mission_id_provided ? 1 : 0,
+        data.mission_id,
         data.status || "ACTIVE",
         id,
       ],

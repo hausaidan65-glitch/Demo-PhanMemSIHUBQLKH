@@ -24,6 +24,10 @@ router.get(
   CourseReportController.coursesByProgram,
 );
 router.get(
+  "/programs/:programId/overview",
+  CourseReportController.programOverview,
+);
+router.get(
   "/courses/:courseId/openings",
   CourseReportController.openingsByCourse,
 );

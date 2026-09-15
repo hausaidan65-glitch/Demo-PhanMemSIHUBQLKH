@@ -14,6 +14,47 @@ import {
 
 const API_URL = "http://localhost:5000/api";
 
+const NO_PROJECT_OPTION = "Chưa có dự án khởi nghiệp";
+const AUDIENCE_OPTIONS = [
+  { value: "SME", label: "Doanh nghiệp SME" },
+  { value: "STARTUP_COMPANY", label: "Doanh nghiệp khởi nghiệp sáng tạo (Startup đã thành lập DN)" },
+  { value: "STARTUP_PROJECT", label: "Startup/Dự án (Chưa thành lập doanh nghiệp)" },
+  { value: "EDUCATOR", label: "Giảng viên/giáo viên các trường đại học, cao đẳng, phổ thông" },
+  { value: "SUPPORT_ORGANIZATION", label: "Tổ chức hỗ trợ khởi nghiệp" },
+  { value: "INVESTMENT_FUND", label: "Quỹ đầu tư" },
+  { value: "COOPERATIVE", label: "Hợp tác xã, làng nghề" },
+  { value: "STUDENT", label: "Sinh viên" },
+];
+const PROJECT_FIELD_OPTIONS = [
+  "Lĩnh vực Thương mại điện tử",
+  "Lĩnh vực Công nghệ tài chính",
+  "Lĩnh vực Logistic",
+  "Lĩnh vực Công nghệ giáo dục",
+  "Lĩnh vực Y tế và chăm sóc sức khỏe",
+  "Lĩnh vực Nông nghiệp công nghệ cao",
+  "Lĩnh vực Phát triển bền vững",
+  "Lĩnh vực Chuyển đổi số, trí tuệ nhân tạo (AI)",
+  "Lĩnh vực An ninh mạng",
+  "Lĩnh vực công nghiệp văn hóa",
+  NO_PROJECT_OPTION,
+  "Lĩnh vực công nghệ bán dẫn, vi mạch",
+  "Lĩnh vực VR, AR",
+  "Lĩnh vực DRONE,UAV",
+];
+const STARTUP_STAGE_OPTIONS = [
+  "Giai đoạn ý tưởng",
+  "Giai đoạn prototype/MVP",
+  "Đã có một vài khách hàng (trả tiền)",
+  "Đang trong giai đoạn tăng tốc",
+  "Giai đoạn tăng trưởng",
+  "Giai đoạn trưởng thành",
+];
+const NQ20_OPTIONS = [
+  "Tôi là dự án đã được tuyển chọn năm 2024",
+  "Tôi là dự án được tuyển chọn năm 2025",
+  "Tôi không thuộc chương trình trên",
+];
+
 const INITIAL_FORM = {
   fullname: "",
   phone: "",
@@ -24,8 +65,7 @@ const INITIAL_FORM = {
   age_group: "",
   user_type: "",
 
-  has_project: "",
-  project_field: "",
+  project_field: [],
   startup_stage: "",
 
   program_selection_status: "",
@@ -154,6 +194,27 @@ export default function Register() {
     setApiMessage("");
   };
 
+  const toggleProjectField = (option) => {
+    setForm((previous) => {
+      const selected = previous.project_field.includes(option);
+      if (option === NO_PROJECT_OPTION) {
+        return {
+          ...previous,
+          project_field: selected ? [] : [NO_PROJECT_OPTION],
+          startup_stage: "",
+        };
+      }
+      return {
+        ...previous,
+        project_field: selected
+          ? previous.project_field.filter((value) => value !== option)
+          : [...previous.project_field.filter((value) => value !== NO_PROJECT_OPTION), option],
+      };
+    });
+    setErrors((previous) => ({ ...previous, project_field: "" }));
+    setApiMessage("");
+  };
+
   const validateForm = () => {
     const nextErrors = {};
 
@@ -229,21 +290,14 @@ export default function Register() {
       nextErrors.user_type = "Vui lòng chọn đối tượng tham gia.";
     }
 
-    // Bắt buộc chọn Có / Chưa có dự án
-    if (form.has_project === "") {
-      nextErrors.has_project =
-        "Vui lòng cho biết bạn có dự án khởi nghiệp hay chưa.";
+    if (!form.project_field.length) {
+      nextErrors.project_field = "Vui lòng chọn lĩnh vực hoặc Chưa có dự án khởi nghiệp.";
+    } else if (form.project_field.join(" | ").length > 255) {
+      nextErrors.project_field = "Các lĩnh vực đã chọn vượt quá giới hạn lưu trữ; vui lòng chọn tối đa các lĩnh vực phù hợp nhất.";
     }
 
-    // Chỉ bắt lĩnh vực + giai đoạn khi CÓ dự án
-    if (form.has_project === true) {
-      if (!form.project_field.trim()) {
-        nextErrors.project_field = "Vui lòng nhập lĩnh vực dự án.";
-      }
-
-      if (!form.startup_stage) {
-        nextErrors.startup_stage = "Vui lòng chọn giai đoạn dự án.";
-      }
+    if (!form.project_field.includes(NO_PROJECT_OPTION) && !form.startup_stage) {
+      nextErrors.startup_stage = "Vui lòng chọn giai đoạn dự án.";
     }
 
     // Câu NQ20 luôn bắt buộc
@@ -299,13 +353,13 @@ export default function Register() {
 
       user_type: form.user_type,
 
-      has_project: form.has_project === true,
+      has_project: !form.project_field.includes(NO_PROJECT_OPTION),
 
-      project_field:
-        form.has_project === true ? form.project_field.trim() || null : null,
+      project_field: form.project_field.join(" | ") || null,
 
-      startup_stage:
-        form.has_project === true ? form.startup_stage || null : null,
+      startup_stage: form.project_field.includes(NO_PROJECT_OPTION)
+        ? null
+        : form.startup_stage || null,
 
       program_selection_status: form.program_selection_status,
 
@@ -553,11 +607,10 @@ export default function Register() {
                     }
                     className={inputClass(errors.user_type)}
                   >
-                    <option value="">Chọn đối tượng</option>
-                    <option value="STARTUP">Startup</option>
-                    <option value="STUDENT">Sinh viên</option>
-                    <option value="BUSINESS">Doanh nghiệp</option>
-                    <option value="OTHER">Khác</option>
+                    <option value="">Chọn nhóm đối tượng</option>
+                    {AUDIENCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
                   </select>
                 </Field>
 
@@ -591,80 +644,33 @@ export default function Register() {
 
             <FormSection title="Thông tin dự án">
               <Field
-                label="Bạn có dự án khởi nghiệp hay chưa?"
+                label="Bạn có dự án khởi nghiệp hay chưa, nếu có, dự án thuộc lĩnh vực nào?"
                 required
-                error={errors.has_project}
+                error={errors.project_field}
               >
-                <div className="flex gap-6">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="has_project"
-                      checked={form.has_project === true}
-                      onChange={() => updateField("has_project", true)}
-                    />
-                    <span>Có</span>
-                  </label>
-
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="has_project"
-                      checked={form.has_project === false}
-                      onChange={() => {
-                        updateField("has_project", false);
-
-                        setForm((previous) => ({
-                          ...previous,
-                          has_project: false,
-                          project_field: "",
-                          startup_stage: "",
-                        }));
-                      }}
-                    />
-                    <span>Chưa</span>
-                  </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {PROJECT_FIELD_OPTIONS.map((option) => (
+                    <label key={option} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700 hover:border-green-300 hover:bg-green-50">
+                      <input
+                        type="checkbox"
+                        checked={form.project_field.includes(option)}
+                        onChange={() => toggleProjectField(option)}
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-green-600"
+                      />
+                      <span>{option}</span>
+                    </label>
+                  ))}
                 </div>
               </Field>
 
-              {form.has_project === true && (
-                <div className="mt-6 grid gap-5 md:grid-cols-2">
-                  <Field
-                    label="Lĩnh vực dự án"
-                    required
-                    error={errors.project_field}
-                  >
-                    <input
-                      type="text"
-                      value={form.project_field}
-                      onChange={(event) =>
-                        updateField("project_field", event.target.value)
-                      }
-                      maxLength={255}
-                      placeholder="Công nghệ, giáo dục, nông nghiệp..."
-                      className={inputClass(errors.project_field)}
-                    />
-                  </Field>
-
-                  <Field
-                    label="Giai đoạn dự án"
-                    required
-                    error={errors.startup_stage}
-                  >
-                    <select
-                      value={form.startup_stage}
-                      onChange={(event) =>
-                        updateField("startup_stage", event.target.value)
-                      }
-                      className={inputClass(errors.startup_stage)}
-                    >
+              {!form.project_field.includes(NO_PROJECT_OPTION) && (
+                <div className="mt-6 max-w-xl">
+                  <Field label="Giai đoạn dự án" required error={errors.startup_stage}>
+                    <select value={form.startup_stage} onChange={(event) => updateField("startup_stage", event.target.value)} className={inputClass(errors.startup_stage)}>
                       <option value="">Chọn giai đoạn</option>
-                      <option value="IDEA">Ý tưởng</option>
-                      <option value="MVP">Đã có sản phẩm thử nghiệm</option>
-                      <option value="EARLY_STAGE">
-                        Đang phát triển thị trường
-                      </option>
-                      <option value="GROWTH">Đang tăng trưởng</option>
+                      {STARTUP_STAGE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
                     </select>
                   </Field>
                 </div>
@@ -676,32 +682,13 @@ export default function Register() {
                 required
                 error={errors.program_selection_status}
               >
-                <div className="flex gap-6">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="program_selection_status"
-                      value="YES"
-                      checked={form.program_selection_status === "YES"}
-                      onChange={() =>
-                        updateField("program_selection_status", "YES")
-                      }
-                    />
-                    <span>Có</span>
-                  </label>
-
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="program_selection_status"
-                      value="NO"
-                      checked={form.program_selection_status === "NO"}
-                      onChange={() =>
-                        updateField("program_selection_status", "NO")
-                      }
-                    />
-                    <span>Chưa</span>
-                  </label>
+                <div className="grid gap-3">
+                  {NQ20_OPTIONS.map((option) => (
+                    <label key={option} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700 hover:border-green-300 hover:bg-green-50">
+                      <input type="radio" name="program_selection_status" value={option} checked={form.program_selection_status === option} onChange={() => updateField("program_selection_status", option)} className="mt-0.5 h-4 w-4 shrink-0 accent-green-600" />
+                      <span>{option}</span>
+                    </label>
+                  ))}
                 </div>
               </Field>
             </FormSection>

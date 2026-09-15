@@ -4,7 +4,11 @@ const RegistrationModel = require("../../models/registrationModel");
 
 const generateQrToken = require("../../utils/generateQrToken");
 
-const { validateGoogleFormBatch } = require("./googleFormBatchValidator");
+const {
+  sanitizeExhibitionSurveyData,
+  validateGoogleFormBatch,
+} = require("./googleFormBatchValidator");
+const crypto = require("crypto");
 
 // =====================================================
 // BASIC HELPERS
@@ -150,17 +154,24 @@ function normalizeBoolean(value) {
 
   const text = String(value ?? "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
 
-  if (["có", "co", "yes", "true", "x"].includes(text)) {
+  if (["co", "yes", "true", "x"].includes(text)
+    || text.includes("da co y tuong")
+    || text.includes("da co du an")) {
     return true;
   }
 
-  if (["không", "khong", "no", "false"].includes(text)) {
+  if (["khong", "no", "false"].includes(text)
+    || text.includes("chua co y tuong")
+    || text.includes("chua co du an")) {
     return false;
   }
 
-  return false;
+  return null;
 }
 
 // =====================================================
@@ -173,10 +184,14 @@ function normalizeBoolean(value) {
 // Batch Commit cần toàn bộ INSERT nằm cùng transaction.
 // =====================================================
 
-async function createUserWithConnection(connection, rowData) {
+async function createUserWithConnection(connection, rowData, openingId) {
   const fullname = cleanValue(rowData.fullname);
 
-  const phone = normalizePhone(rowData.phone);
+  const phone = normalizePhone(rowData.phone) || `GF-${openingId}-${crypto
+    .createHash("sha256")
+    .update(`${openingId}|${String(rowData.fullname || "").trim().toLowerCase()}`)
+    .digest("hex")
+    .slice(0, 16)}`;
 
   let email = normalizeEmail(rowData.email);
 
@@ -209,10 +224,6 @@ async function createUserWithConnection(connection, rowData) {
     throw new Error("Không thể tạo user vì thiếu họ tên.");
   }
 
-  if (!phone) {
-    throw new Error(`Không thể tạo user "${fullname}" vì thiếu số điện thoại.`);
-  }
-
   const [result] = await connection.query(
     `
       INSERT INTO users
@@ -240,17 +251,20 @@ async function createUserWithConnection(connection, rowData) {
 
 function buildRegistrationData(rowData) {
   const hasProject = normalizeBoolean(rowData.has_project);
+  const preserveProjectData = hasProject !== false;
 
   return {
     has_project: hasProject,
 
-    project_name: hasProject ? cleanValue(rowData.project_name) : null,
+    project_name: preserveProjectData ? cleanValue(rowData.project_name) : null,
 
-    project_field: hasProject ? cleanValue(rowData.project_field) : null,
+    project_field: preserveProjectData ? cleanValue(rowData.project_field) : null,
 
-    startup_stage: hasProject ? cleanValue(rowData.startup_stage) : null,
+    startup_stage: preserveProjectData
+      ? cleanValue(rowData.project_stage || rowData.startup_stage)
+      : null,
 
-    project_description: hasProject
+    project_description: preserveProjectData
       ? cleanValue(rowData.project_description)
       : null,
 
@@ -261,13 +275,15 @@ function buildRegistrationData(rowData) {
         ? null
         : normalizeBoolean(rowData.female_founder),
 
-    team_size: hasProject ? cleanValue(rowData.team_size) : null,
+    team_size: preserveProjectData ? cleanValue(rowData.team_size) : null,
 
-    incubation_status: hasProject
+    incubation_status: preserveProjectData
       ? cleanValue(rowData.incubation_status)
       : null,
 
-    program_selection_status: cleanValue(rowData.program_selection_status),
+    program_selection_status: cleanValue(
+      rowData.nq20_status || rowData.program_selection_status,
+    ),
 
     support_needs: cleanValue(rowData.support_needs),
 
@@ -701,7 +717,7 @@ async function commitTrainingBatch({ target, rows, source }) {
 
           userSource = "EXISTING_AFTER_RECHECK";
         } else {
-          userId = await createUserWithConnection(connection, rowData);
+          userId = await createUserWithConnection(connection, rowData, openingId);
 
           createdUsers += 1;
 
@@ -743,6 +759,8 @@ async function commitTrainingBatch({ target, rows, source }) {
 
       const registrationId = await RegistrationModel.create(connection, {
         ...registrationData,
+
+        preserve_has_project_unknown: true,
 
         user_id: userId,
 
@@ -844,6 +862,167 @@ async function commitTrainingBatch({ target, rows, source }) {
   }
 }
 
+function buildExhibitionInsertValues(eventId, sourceData = {}) {
+  const data = sanitizeExhibitionSurveyData(sourceData);
+  return [eventId, data.fullname, data.position,
+    data.organization, normalizePhone(data.phone) || "", normalizeEmail(data.email) || "",
+    data.project_field, data.exhibition_product_name,
+    data.exhibition_product_quantity, data.sold_or_ordered_quantity,
+    data.visitor_count, data.b2b_matching_count,
+    data.public_sector_connection_count, data.mou_count, data.exhibition_revenue,
+    data.highlight_impression, data.want_to_join_again,
+    cleanValue(data.organizer_feedback), cleanValue(data.other_sharing)];
+}
+
+async function commitExhibitionBatch({ target, rows }) {
+  const eventId = Number(target?.eventId);
+  if (!eventId) throw new Error("Thiếu Triển lãm nhận dữ liệu.");
+
+  const validation = await validateGoogleFormBatch({ target, rows });
+  const rowsReady = (validation.rows || []).filter(
+    (row) => row.dbStatus === "NEW" || row.dbStatus === "EXISTING",
+  );
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const [[event]] = await connection.query(
+      `SELECT id FROM startup_connection_events
+        WHERE id = ? AND event_type = 'EXHIBITION' FOR UPDATE`,
+      [eventId],
+    );
+    if (!event) throw new Error("Triển lãm không tồn tại.");
+
+    let createdSurveys = 0;
+    const resultRows = [];
+
+    for (const row of rowsReady) {
+      const [insertResult] = await connection.query(
+        `INSERT INTO exhibition_surveys
+          (event_id, fullname, position, organization, phone, email, project_field,
+           exhibition_product_name, exhibition_product_quantity,
+           sold_or_ordered_quantity, visitor_count, b2b_matching_count,
+           public_sector_connection_count, mou_count, exhibition_revenue,
+           highlight_impression, want_to_join_again, organizer_feedback, other_sharing)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        buildExhibitionInsertValues(eventId, row.data),
+      );
+      createdSurveys += 1;
+      resultRows.push({ rowNumber: row.rowNumber, surveyId: insertResult.insertId, status: "IMPORTED" });
+    }
+    await connection.commit();
+    return {
+      success: true,
+      targetType: "EXHIBITION",
+      requested: rows.length,
+      readyBeforeCommit: rowsReady.length,
+      createdUsers: 0,
+      existingUsersUsed: 0,
+      createdRegistrations: 0,
+      createdSurveys,
+      skippedAlreadyRegistered: 0,
+      skippedConflicts: Number(validation.summary?.conflict || 0),
+      savedExtraRows: 0,
+      rows: resultRows,
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function commitNetworkingBatch({ target, rows }) {
+  const eventId = Number(target?.eventId);
+  if (!eventId) throw new Error("Thiếu Sự kiện kết nối nhận dữ liệu.");
+
+  const validation = await validateGoogleFormBatch({ target, rows });
+  const rowsReady = (validation.rows || []).filter(
+    (row) => row.dbStatus === "NEW" || row.dbStatus === "EXISTING",
+  );
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const [[event]] = await connection.query(
+      "SELECT id FROM networking_events WHERE id = ? FOR UPDATE",
+      [eventId],
+    );
+    if (!event) throw new Error("Sự kiện kết nối không tồn tại.");
+
+    let createdUsers = 0;
+    let existingUsersUsed = 0;
+    let createdRegistrations = 0;
+    let skippedAlreadyRegistered = 0;
+    const resultRows = [];
+
+    for (const row of rowsReady) {
+      const data = row.data || {};
+      let userId = Number(row.existingUser?.id || row.existing?.user?.id || row.existing?.id) || null;
+      if (userId) existingUsersUsed += 1;
+      else {
+        userId = await createUserWithConnection(connection, data, `NW-${eventId}`);
+        createdUsers += 1;
+      }
+
+      const [[duplicate]] = await connection.query(
+        `SELECT id FROM networking_event_participants
+          WHERE event_id = ? AND user_id = ? LIMIT 1 FOR UPDATE`,
+        [eventId, userId],
+      );
+      if (duplicate) {
+        skippedAlreadyRegistered += 1;
+        resultRows.push({ rowNumber: row.rowNumber, userId, status: "SKIPPED_ALREADY_REGISTERED" });
+        continue;
+      }
+
+      const hasProject = normalizeBoolean(data.has_project);
+      await connection.query(
+        `INSERT INTO networking_event_participants
+          (event_id, user_id, participant_role, organization, position,
+           has_project, project_field, startup_stage, program_selection_status,
+           support_needs, organizer_question, note, checked_in, registration_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'CONFIRMED')`,
+        [eventId, userId, cleanValue(data.participant_role), cleanValue(data.organization),
+          cleanValue(data.position), hasProject ? 1 : 0,
+          hasProject ? cleanValue(data.project_field) : null,
+          hasProject ? cleanValue(data.startup_stage) : null,
+          cleanValue(data.program_selection_status), cleanValue(data.support_needs),
+          cleanValue(data.organizer_question), cleanValue(data.note)],
+      );
+      createdRegistrations += 1;
+      resultRows.push({ rowNumber: row.rowNumber, userId, status: "IMPORTED" });
+    }
+
+    await connection.query(
+      `UPDATE networking_events SET current_participants =
+        (SELECT COUNT(*) FROM networking_event_participants WHERE event_id = ?)
+       WHERE id = ?`,
+      [eventId, eventId],
+    );
+    await connection.commit();
+    return {
+      success: true,
+      targetType: "NETWORKING",
+      requested: rows.length,
+      readyBeforeCommit: rowsReady.length,
+      createdUsers,
+      existingUsersUsed,
+      createdRegistrations,
+      skippedAlreadyRegistered: skippedAlreadyRegistered + Number(validation.summary?.alreadyRegistered || 0),
+      skippedConflicts: Number(validation.summary?.conflict || 0),
+      savedExtraRows: 0,
+      rows: resultRows,
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 // =====================================================
 // MAIN
 // =====================================================
@@ -867,6 +1046,14 @@ async function commitGoogleFormBatch({ target, rows, source }) {
     });
   }
 
+  if (targetType === "EXHIBITION") {
+    return commitExhibitionBatch({ target, rows, source });
+  }
+
+  if (targetType === "NETWORKING") {
+    return commitNetworkingBatch({ target, rows, source });
+  }
+
   /*
    * Seminar / Networking làm sau khi Training
    * test DB thành công.
@@ -875,5 +1062,8 @@ async function commitGoogleFormBatch({ target, rows, source }) {
 }
 
 module.exports = {
+  buildExhibitionInsertValues,
+  buildRegistrationData,
   commitGoogleFormBatch,
+  normalizeBoolean,
 };

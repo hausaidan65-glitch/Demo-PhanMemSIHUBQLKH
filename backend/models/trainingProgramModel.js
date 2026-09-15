@@ -7,6 +7,7 @@ class TrainingProgramModel {
 
             tp.id AS program_id,
             tp.program_name,
+            tp.year,
             tp.description AS program_description,
 
             c.id AS course_id,
@@ -44,6 +45,7 @@ class TrainingProgramModel {
         programs[row.program_id] = {
           id: row.program_id,
           program_name: row.program_name,
+          year: row.year == null ? null : Number(row.year),
           description: row.program_description,
           courses: [],
         };
@@ -90,12 +92,22 @@ class TrainingProgramModel {
 
     return Object.values(programs);
   }
-  static async getAll() {
+  static async getAll(query = {}) {
+    const conditions = [];
+    const params = [];
+
+    if (query.year !== undefined && query.year !== null) {
+      conditions.push("tp.year = ?");
+      params.push(Number(query.year));
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const [rows] = await db.query(`
     SELECT
       tp.id,
       tp.program_name,
       tp.description,
+      tp.year,
       tp.status,
       tp.created_at,
       tp.updated_at,
@@ -111,19 +123,23 @@ class TrainingProgramModel {
     LEFT JOIN course_classes cc
       ON cc.course_id = c.id
 
+    ${whereClause}
+
     GROUP BY
       tp.id,
       tp.program_name,
       tp.description,
+      tp.year,
       tp.status,
       tp.created_at,
       tp.updated_at
 
     ORDER BY tp.id ASC
-  `);
+  `, params);
 
     return rows.map((item) => ({
       ...item,
+      year: item.year == null ? null : Number(item.year),
       total_courses: Number(item.total_courses) || 0,
       total_classes: Number(item.total_classes) || 0,
     }));
@@ -136,6 +152,7 @@ class TrainingProgramModel {
         id,
         program_name,
         description,
+        year,
         status,
         created_at,
         updated_at
@@ -177,11 +194,12 @@ class TrainingProgramModel {
       (
         program_name,
         description,
+        year,
         status
       )
-      VALUES (?, ?, ?)
+      VALUES (?, ?, ?, ?)
     `,
-      [data.program_name, data.description || null, data.status || "ACTIVE"],
+      [data.program_name, data.description || null, data.year ?? null, data.status || "ACTIVE"],
     );
 
     return result.insertId;
@@ -194,12 +212,15 @@ class TrainingProgramModel {
       SET
         program_name = ?,
         description = ?,
+        year = IF(?, ?, year),
         status = ?
       WHERE id = ?
     `,
       [
         data.program_name,
         data.description || null,
+        data.year_provided ? 1 : 0,
+        data.year,
         data.status || "ACTIVE",
         id,
       ],

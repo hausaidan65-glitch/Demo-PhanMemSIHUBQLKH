@@ -28,6 +28,7 @@ import OpeningReportDetailPage from "./admin/reports/course/OpeningReportDetailP
 import StudentAttendanceReportPage from "./admin/reports/course/StudentAttendanceReportPage";
 import SeminarParticipantsPage from "./admin/reports/event/SeminarParticipantsPage";
 import SeminarParticipantDetailPage from "./admin/reports/event/SeminarParticipantDetailPage";
+import MissionManagement from "./admin/MissionManagement";
 
 // USER
 
@@ -119,6 +120,8 @@ ADMIN
             <Route index element={<Dashboard />} />
 
             <Route path="programs" element={<Programs />} />
+
+            <Route path="missions" element={<MissionManagement />} />
 
             <Route path="courses" element={<Courses />} />
 

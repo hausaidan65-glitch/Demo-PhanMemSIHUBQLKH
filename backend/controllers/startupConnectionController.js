@@ -2,6 +2,51 @@ const ExcelJS = require("exceljs");
 const StartupConnectionModel = require("../models/startupConnectionModel");
 const ExhibitionSurveyModel = require("../models/exhibitionSurveyModel");
 const UserModel = require("../models/userModel");
+const MissionModel = require("../models/missionModel");
+
+function parseMissionId(body = {}) {
+  if (Object.prototype.hasOwnProperty.call(body, "mission_source")) {
+    return { error: "mission_source không được chấp nhận trên sự kiện." };
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, "mission_id") || body.mission_id === undefined) {
+    return { provided: false, value: null };
+  }
+  if (body.mission_id === null) return { provided: true, value: null };
+  if (typeof body.mission_id !== "string" && typeof body.mission_id !== "number") {
+    return { error: "mission_id không hợp lệ." };
+  }
+  const rawValue = String(body.mission_id).trim();
+  if (!rawValue) return { provided: true, value: null };
+  if (!/^[1-9]\d*$/.test(rawValue)) return { error: "mission_id không hợp lệ." };
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value)) return { error: "mission_id không hợp lệ." };
+  return { provided: true, value };
+}
+
+async function validateMissionAssignment(parsed, existingMissionId = null) {
+  if (!parsed.provided || parsed.value === null) return null;
+  if (Number(existingMissionId) === parsed.value) return null;
+  const mission = await MissionModel.findById(parsed.value);
+  if (!mission) {
+    return { status: 400, code: "INVALID_MISSION_ID", message: "Nhiệm vụ không tồn tại." };
+  }
+  if (mission.status !== "ACTIVE") {
+    return {
+      status: 409,
+      code: "INACTIVE_MISSION",
+      message: "Không thể gán nhiệm vụ đã ngừng hoạt động.",
+    };
+  }
+  return null;
+}
+
+function missionError(res, error) {
+  return res.status(error.status || 400).json({
+    success: false,
+    code: error.code || "INVALID_MISSION_ID",
+    message: error.message || error.error,
+  });
+}
 // =========================================================
 // LẤY DANH SÁCH
 // =========================================================
@@ -100,6 +145,11 @@ exports.getEventById = async (req, res) => {
 // =========================================================
 exports.createEvent = async (req, res) => {
   try {
+    const parsedMissionId = parseMissionId(req.body);
+    if (parsedMissionId.error) return missionError(res, parsedMissionId);
+    const assignmentError = await validateMissionAssignment(parsedMissionId);
+    if (assignmentError) return missionError(res, assignmentError);
+
     const {
       event_name,
       event_type,
@@ -193,6 +243,7 @@ exports.createEvent = async (req, res) => {
       short_description: short_description || null,
       description: description || null,
       mission: String(mission || "").trim() || null,
+      mission_id: parsedMissionId.value,
       thumbnail: thumbnail || null,
       location: location || null,
       start_datetime: start_datetime || null,
@@ -242,6 +293,14 @@ exports.updateEvent = async (req, res) => {
         message: "Không tìm thấy sự kiện.",
       });
     }
+
+    const parsedMissionId = parseMissionId(req.body);
+    if (parsedMissionId.error) return missionError(res, parsedMissionId);
+    const assignmentError = await validateMissionAssignment(
+      parsedMissionId,
+      existing.mission_id,
+    );
+    if (assignmentError) return missionError(res, assignmentError);
 
     const {
       event_name,
@@ -337,7 +396,12 @@ exports.updateEvent = async (req, res) => {
       event_code: event_code || null,
       short_description: short_description || null,
       description: description || null,
-      mission: String(mission || "").trim() || null,
+      mission_provided: Object.prototype.hasOwnProperty.call(req.body, "mission"),
+      mission: mission === undefined
+        ? null
+        : String(mission || "").trim() || null,
+      mission_id_provided: parsedMissionId.provided,
+      mission_id: parsedMissionId.value,
       thumbnail: thumbnail || null,
       location: location || null,
       start_datetime: start_datetime || null,
@@ -363,6 +427,11 @@ exports.updateEvent = async (req, res) => {
       message: "Không thể cập nhật sự kiện.",
     });
   }
+};
+
+exports._test = {
+  parseMissionId,
+  validateMissionAssignment,
 };
 exports.getParticipants = async (req, res) => {
   try {

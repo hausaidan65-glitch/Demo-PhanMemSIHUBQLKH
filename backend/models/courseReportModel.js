@@ -1,5 +1,76 @@
 const db = require("../config/db");
 
+const PROJECT_FIELD_CANONICAL = new Map([
+  ["linh vuc thuong mai dien tu", "Lĩnh vực Thương mại điện tử"],
+  ["linh vuc cong nghe tai chinh", "Lĩnh vực Công nghệ tài chính"],
+  ["linh vuc logistic", "Lĩnh vực Logistic"],
+  ["linh vuc cong nghe giao duc", "Lĩnh vực Công nghệ giáo dục"],
+  ["linh vuc y te va cham soc suc khoe", "Lĩnh vực Y tế và chăm sóc sức khỏe"],
+  ["y te va cham soc suc khoe", "Lĩnh vực Y tế và chăm sóc sức khỏe"],
+  ["linh vuc nong nghiep cong nghe cao", "Lĩnh vực Nông nghiệp công nghệ cao"],
+  ["linh vuc phat trien ben vung", "Lĩnh vực Phát triển bền vững"],
+  ["linh vuc chuyen doi so", "Lĩnh vực Chuyển đổi số, trí tuệ nhân tạo (AI)"],
+  ["linh vuc chuyen doi so, tri tue nhan tao", "Lĩnh vực Chuyển đổi số, trí tuệ nhân tạo (AI)"],
+  ["linh vuc chuyen doi so, tri tue nhan tao (ai)", "Lĩnh vực Chuyển đổi số, trí tuệ nhân tạo (AI)"],
+  ["linh vuc an ninh mang", "Lĩnh vực An ninh mạng"],
+  ["linh vuc cong nghiep van hoa", "Lĩnh vực công nghiệp văn hóa"],
+  ["cong nghiep van hoa", "Lĩnh vực công nghiệp văn hóa"],
+  ["chua co y tuong/du an", "Chưa có dự án khởi nghiệp"],
+  ["chua co du an khoi nghiep", "Chưa có dự án khởi nghiệp"],
+  ["linh vuc cong nghe ban dan, vi mach", "Lĩnh vực công nghệ bán dẫn, vi mạch"],
+  ["linh vuc vr, ar", "Lĩnh vực VR, AR"],
+  ["linh vuc drone,uav", "Lĩnh vực DRONE,UAV"],
+  ["linh vuc drone, uav", "Lĩnh vực DRONE,UAV"],
+]);
+
+const STARTUP_STAGE_CANONICAL = new Map([
+  ["giai doan y tuong", "Giai đoạn ý tưởng"],
+  ["giai doan prototype/mvp", "Giai đoạn prototype/MVP"],
+  ["da co mot vai khach hang (tra tien)", "Đã có một vài khách hàng (trả tiền)"],
+  ["dang trong giai doan tang toc", "Đang trong giai đoạn tăng tốc"],
+  ["giai doan tang truong", "Giai đoạn tăng trưởng"],
+  ["giai doan truong thanh", "Giai đoạn trưởng thành"],
+]);
+
+const NQ20_CANONICAL = new Map([
+  ["toi la du an da duoc tuyen chon nam 2024", "Tôi là dự án đã được tuyển chọn năm 2024"],
+  ["toi la du an duoc tuyen chon nam 2025", "Tôi là dự án được tuyển chọn năm 2025"],
+  ["toi khong thuoc chuong trinh tren", "Tôi không thuộc chương trình trên"],
+]);
+
+const MISSING_TEXT_VALUES = new Set([
+  "", "-", ".", "n/a", "na", "none", "null", "unknown",
+  "khong", "khong co", "chua co", "khong chia se", "khong co du lieu",
+  "chua cap nhat", "khac",
+]);
+
+const POSITION_DISPLAY_ALIASES = new Map([
+  ["founder", "Founder"],
+  ["co-founder", "Co-founder"],
+  ["giang vien", "Giảng viên"],
+  ["giao vien", "Giáo viên"],
+  ["giam doc", "Giám đốc"],
+  ["pho giam doc", "Phó giám đốc"],
+  ["nhan vien", "Nhân viên"],
+  ["sinh vien", "Sinh viên"],
+  ["quan ly", "Quản lý"],
+  ["truong khoa", "Trưởng khoa"],
+]);
+
+const AUDIENCE_CANONICAL = new Map([
+  ["startup", "STARTUP"],
+  ["business", "BUSINESS"],
+  ["university", "UNIVERSITY"],
+  ["student", "STUDENT"],
+  ["sme", "SME"],
+  ["startup_company", "STARTUP_COMPANY"],
+  ["startup_project", "STARTUP_PROJECT"],
+  ["educator", "EDUCATOR"],
+  ["support_organization", "SUPPORT_ORGANIZATION"],
+  ["investment_fund", "INVESTMENT_FUND"],
+  ["cooperative", "COOPERATIVE"],
+]);
+
 const PARTICIPANT_GROUPS = [
   { code: "STARTUP", name: "Startup" },
   { code: "STUDENT", name: "Sinh viên" },
@@ -7,6 +78,309 @@ const PARTICIPANT_GROUPS = [
   { code: "COOPERATIVE", name: "HTX" },
   { code: "OTHER", name: "Nhóm khác" },
 ];
+
+const PROGRAM_OVERVIEW_USER_FIELDS = [
+  { key: "gender", label: "Giới tính" },
+  { key: "age_group", label: "Nhóm tuổi" },
+  { key: "user_type", label: "Nhóm đối tượng" },
+  { key: "company", label: "Đơn vị công tác" },
+  { key: "position", label: "Chức vụ", presentationTailLimit: 12 },
+];
+
+const PROGRAM_OVERVIEW_REGISTRATION_FIELDS = [
+  { key: "has_project", label: "Có dự án?", boolean: true },
+  { key: "project_name", label: "Tên dự án" },
+  { key: "project_field", label: "Lĩnh vực dự án", canonicalOnly: true, multiValue: true },
+  { key: "startup_stage", label: "Giai đoạn dự án", canonicalOnly: true },
+  { key: "project_description", label: "Mô tả dự án" },
+  {
+    key: "female_founder",
+    label: "Dự án có nữ founder/co-founder?",
+    boolean: true,
+  },
+  { key: "team_size", label: "Quy mô đội ngũ" },
+  { key: "incubation_status", label: "Trạng thái ươm tạo" },
+  {
+    key: "program_selection_status",
+    label: "Bạn đã được tuyển chọn vào chương trình ươm tạo, tăng tốc theo Nghị quyết 20/2023/NQ-HĐND do SIHUB tổ chức?",
+    description: "Bạn đã được tuyển chọn vào chương trình ươm tạo, tăng tốc theo Nghị quyết 20/2023/NQ-HĐND do SIHUB tổ chức?",
+    canonicalOnly: true,
+  },
+  { key: "support_needs", label: "Nhu cầu hỗ trợ" },
+  { key: "organizer_question", label: "Câu hỏi cho Ban tổ chức" },
+  { key: "register_status", label: "Trạng thái đăng ký" },
+  { key: "checked_in", label: "Đã check-in", boolean: true },
+];
+
+function hasOverviewValue(value) {
+  return value !== null
+    && value !== undefined
+    && (typeof value !== "string" || value.trim() !== "");
+}
+
+function normalizedOverviewText(value) {
+  return String(value ?? "").normalize("NFC").trim().replace(/\s+/g, " ");
+}
+
+function comparableOverviewText(value) {
+  return normalizedOverviewText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+}
+
+function lexicalComparableText(value) {
+  return comparableOverviewText(value)
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\s*([/&,+-])\s*/g, "$1")
+    .replace(/^[\s.,;:_/\\-]+|[\s.,;:_/\\-]+$/g, "");
+}
+
+function lexicalCasefoldText(value) {
+  return normalizedOverviewText(value)
+    .toLocaleLowerCase("vi")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\s*([/&,+-])\s*/g, "$1")
+    .replace(/^[\s.,;:_/\\-]+|[\s.,;:_/\\-]+$/g, "");
+}
+
+function isMissingOverviewText(value) {
+  return MISSING_TEXT_VALUES.has(lexicalComparableText(value));
+}
+
+function normalizeOverviewValue(field, rawValue) {
+  if (!hasOverviewValue(rawValue)) return null;
+  if (typeof rawValue === "boolean" || typeof rawValue === "number") return rawValue;
+
+  const value = normalizedOverviewText(rawValue);
+  const comparable = comparableOverviewText(value);
+  const lexical = lexicalComparableText(value);
+
+  if (isMissingOverviewText(value)) return null;
+
+  if (field === "gender") {
+    const gender = value.toUpperCase();
+    if (gender === "MALE" || comparable === "nam") return "MALE";
+    if (gender === "FEMALE" || comparable === "nu") return "FEMALE";
+    return null;
+  }
+
+  if (field === "user_type") {
+    return AUDIENCE_CANONICAL.get(lexical.replace(/-/g, "_")) || null;
+  }
+
+  if (field === "age_group") {
+    if (["under_18", "duoi 18 tuoi"].includes(lexical)) return "Dưới 18 tuổi";
+    if (["18_24", "tu 18-24 tuoi", "tu 18 den 24 tuoi"].includes(lexical)) return "Từ 18–24 tuổi";
+    if (["18-25", "18-25 tuoi"].includes(lexical)) return "Từ 18–25 tuổi";
+    if (/^tu 18\s*(?:-|den)\s*25 tuoi$/.test(comparable)) return "Từ 18–25 tuổi";
+    if (["25_34", "tu 25-34 tuoi", "tu 25 den 34 tuoi"].includes(lexical)) return "Từ 25–34 tuổi";
+    if (/^tu 25\s*(?:-|den)\s*35 tuoi$/.test(comparable)) return "Từ 25–35 tuổi";
+    if (["26-35", "26-35 tuoi"].includes(lexical)) return "Từ 26–35 tuổi";
+    if (["35_44", "tu 35-44 tuoi", "tu 35 den 44 tuoi"].includes(lexical)) return "Từ 35–44 tuổi";
+    if (/^tu 35\s*(?:-|den)\s*45 tuoi$/.test(comparable)) return "Từ 35–45 tuổi";
+    if (comparable === "tren 35 tuoi") return "Trên 35 tuổi";
+    if (lexical === "45_plus" || comparable === "tu 45 tuoi tro len") return "Từ 45 tuổi trở lên";
+    if (comparable === "tren 45 tuoi") return "Trên 45 tuổi";
+    if (/^\d+(?: tuoi)?$/.test(comparable)) return "Khác/Chưa chuẩn hóa";
+  }
+
+  if (field === "position") {
+    return POSITION_DISPLAY_ALIASES.get(lexical) || value.replace(/[‐‑‒–—―]/g, "-");
+  }
+
+  if (field === "company") {
+    return value;
+  }
+
+  if (field === "project_field") {
+    return PROJECT_FIELD_CANONICAL.get(comparable) || null;
+  }
+
+  if (field === "startup_stage") {
+    return STARTUP_STAGE_CANONICAL.get(comparable) || null;
+  }
+
+  if (field === "program_selection_status") {
+    return NQ20_CANONICAL.get(comparable) || null;
+  }
+
+  return value;
+}
+
+function normalizeOverviewValues(field, rawValue) {
+  if (field !== "project_field") {
+    const value = normalizeOverviewValue(field, rawValue);
+    return value === null ? [] : [value];
+  }
+
+  let values = [rawValue];
+  if (typeof rawValue === "string") {
+    const trimmed = rawValue.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) values = parsed;
+      } catch {
+        values = trimmed.split(/\s+\|\s+/);
+      }
+    } else {
+      values = trimmed.split(/\s+\|\s+/);
+    }
+  }
+
+  return [...new Set(values
+    .map((value) => normalizeOverviewValue(field, value))
+    .filter((value) => value !== null))];
+}
+
+function deriveHasProject(projectField, rawHasProject) {
+  const projectFields = normalizeOverviewValues("project_field", projectField);
+  const hasNoProject = projectFields.includes("Chưa có dự án khởi nghiệp");
+  const hasCanonicalProject = projectFields.some((value) => value !== "Chưa có dự án khởi nghiệp");
+  if (hasCanonicalProject) return true;
+  if (hasNoProject) return false;
+  if (rawHasProject === true || rawHasProject === 1 || rawHasProject === "1") return true;
+  return null;
+}
+
+function overviewGroupKey(field, value) {
+  if (value === null) return "__MISSING__";
+  if (["company", "position"].includes(field)) {
+    return `${typeof value}:${lexicalCasefoldText(value)}`;
+  }
+  if (["project_field", "startup_stage"].includes(field)) {
+    return `${typeof value}:${lexicalComparableText(value)}`;
+  }
+  return `${typeof value}:${String(value)}`;
+}
+
+function overviewAnalysis(rows, definition, scope) {
+  const {
+    key: field,
+    label,
+    description,
+    boolean = false,
+    canonicalOnly = false,
+    multiValue = false,
+    presentationTailLimit = null,
+  } = definition;
+  const sourceRows = scope === "USER"
+    ? [...new Map(rows.map((row) => [Number(row.user_id), row])).values()]
+    : rows;
+  const groups = new Map();
+
+  sourceRows.forEach((row) => {
+    const values = normalizeOverviewValues(field, row[field]);
+    if (!values.length && !canonicalOnly) values.push(null);
+    values.forEach((value) => {
+      const key = overviewGroupKey(field, value);
+      const current = groups.get(key) || { value, count: 0 };
+      current.count += 1;
+      groups.set(key, current);
+    });
+  });
+
+  const withData = sourceRows.filter((row) => (
+    normalizeOverviewValues(field, row[field]).length > 0
+  )).length;
+  const excluded = canonicalOnly
+    ? sourceRows.filter((row) => hasOverviewValue(row[field])
+      && normalizeOverviewValues(field, row[field]).length === 0).length
+    : 0;
+  const placeholderCount = canonicalOnly
+    ? 0
+    : sourceRows.filter((row) => hasOverviewValue(row[field])
+      && normalizeOverviewValues(field, row[field]).length === 0).length;
+
+  const sortedGroups = [...groups.values()].sort((left, right) => right.count - left.count);
+  let renderedGroups = sortedGroups;
+  let groupedOther = null;
+  if (presentationTailLimit && sortedGroups.filter((group) => group.value !== null).length > presentationTailLimit) {
+    const missingGroups = sortedGroups.filter((group) => group.value === null);
+    const populatedGroups = sortedGroups.filter((group) => group.value !== null);
+    const keptGroups = populatedGroups.slice(0, presentationTailLimit);
+    const tailGroups = populatedGroups.slice(presentationTailLimit);
+    groupedOther = {
+      category_count: tailGroups.length,
+      record_count: tailGroups.reduce((sum, group) => sum + group.count, 0),
+    };
+    renderedGroups = [
+      ...keptGroups,
+      { value: "Khác", count: groupedOther.record_count, grouped_category_count: groupedOther.category_count },
+      ...missingGroups,
+    ];
+  }
+
+  return {
+    key: field,
+    label,
+    description,
+    scope,
+    boolean,
+    multi_value: multiValue,
+    total: sourceRows.length,
+    with_data: withData,
+    without_data: sourceRows.length - withData,
+    excluded_other: excluded,
+    placeholder_count: placeholderCount,
+    raw_distinct: new Set(sourceRows
+      .filter((row) => hasOverviewValue(row[field]))
+      .map((row) => normalizedOverviewText(row[field]))).size,
+    normalized_distinct: sortedGroups.filter((group) => group.value !== null).length,
+    grouped_other: groupedOther,
+    percentage_denominator: multiValue ? withData : sourceRows.length,
+    groups: renderedGroups,
+  };
+}
+
+function matchesOverviewFilters(row, filters) {
+  const exactMatches = [
+    ["gender", "gender"],
+    ["ageGroup", "age_group"],
+    ["userType", "user_type"],
+    ["organization", "company"],
+    ["position", "position"],
+    ["projectField", "project_field"],
+    ["startupStage", "startup_stage"],
+    ["programSelectionStatus", "program_selection_status"],
+    ["registerStatus", "register_status"],
+  ];
+
+  if (filters.courseId && Number(row.course_id) !== Number(filters.courseId)) {
+    return false;
+  }
+
+  if (filters.openingId && Number(row.opening_id) !== Number(filters.openingId)) {
+    return false;
+  }
+
+  if (filters.hasProject !== undefined
+    && Boolean(Number(row.has_project)) !== filters.hasProject) {
+    return false;
+  }
+
+  return exactMatches.every(([filterName, fieldName]) => {
+    if (!filters[filterName]) return true;
+    const filterValue = normalizeOverviewValue(fieldName, filters[filterName]);
+    return normalizeOverviewValues(fieldName, row[fieldName]).some((value) => (
+      overviewGroupKey(fieldName, value) === overviewGroupKey(fieldName, filterValue)
+    ));
+  });
+}
+
+function uniqueOptions(rows, field) {
+  const options = new Map();
+  rows.forEach((row) => {
+    normalizeOverviewValues(field, row[field]).forEach((value) => {
+      const key = overviewGroupKey(field, value);
+      if (!options.has(key)) options.set(key, String(value));
+    });
+  });
+  return [...options.values()]
+    .sort((left, right) => left.localeCompare(right, "vi"));
+}
 
 class CourseReportModel {
   static async getSummary(reportStart, reportEnd) {
@@ -41,8 +415,23 @@ class CourseReportModel {
           (SELECT COUNT(DISTINCT course_id) FROM filtered_openings)
             AS total_courses,
 
-          (SELECT COUNT(*) FROM filtered_openings)
-            AS total_openings,
+          (
+            SELECT COUNT(DISTINCT cc_year.id)
+            FROM course_classes cc_year
+            INNER JOIN courses c_year
+              ON c_year.id = cc_year.course_id
+            INNER JOIN training_programs tp_year
+              ON tp_year.id = c_year.program_id
+            WHERE tp_year.year = YEAR(?)
+              AND cc_year.deleted_at IS NULL
+              AND c_year.deleted_at IS NULL
+          ) AS total_openings,
+
+          (
+            SELECT COUNT(*)
+            FROM training_programs tp
+            WHERE tp.year = YEAR(?)
+          ) AS total_programs,
 
           (
             SELECT COUNT(*)
@@ -74,6 +463,37 @@ class CourseReportModel {
 
           (
             SELECT COUNT(DISTINCT r.user_id)
+            FROM registrations r
+            INNER JOIN course_classes cc
+              ON cc.id = r.class_id
+            INNER JOIN courses c
+              ON c.id = cc.course_id
+            INNER JOIN training_programs tp
+              ON tp.id = c.program_id
+            WHERE r.register_status IN ('PENDING', 'CONFIRMED')
+              AND r.user_id IS NOT NULL
+              AND cc.deleted_at IS NULL
+              AND c.deleted_at IS NULL
+          ) AS total_students_all_time,
+
+          (
+            SELECT COUNT(DISTINCT r.user_id)
+            FROM registrations r
+            INNER JOIN course_classes cc
+              ON cc.id = r.class_id
+            INNER JOIN courses c
+              ON c.id = cc.course_id
+            INNER JOIN training_programs tp
+              ON tp.id = c.program_id
+            WHERE tp.year = YEAR(?)
+              AND r.register_status IN ('PENDING', 'CONFIRMED')
+              AND r.user_id IS NOT NULL
+              AND cc.deleted_at IS NULL
+              AND c.deleted_at IS NULL
+          ) AS total_students_year,
+
+          (
+            SELECT COUNT(DISTINCT r.user_id)
             FROM course_class_attendances a
             INNER JOIN registrations r
               ON r.id = a.registration_id
@@ -91,7 +511,7 @@ class CourseReportModel {
             WHERE cert.issued = 1
           ) AS total_certificates_issued
       `,
-      [reportEnd, reportStart],
+      [reportEnd, reportStart, reportStart, reportStart, reportStart],
     );
 
     const [participantRows] = await db.query(
@@ -143,6 +563,7 @@ class CourseReportModel {
 
     return {
       summary: {
+        total_programs: Number(summaryRow.total_programs) || 0,
         total_courses: Number(summaryRow.total_courses) || 0,
         total_openings: Number(summaryRow.total_openings) || 0,
         finished_openings: Number(summaryRow.finished_openings) || 0,
@@ -150,6 +571,10 @@ class CourseReportModel {
         upcoming_openings: Number(summaryRow.upcoming_openings) || 0,
         total_students_registered:
           Number(summaryRow.total_students_registered) || 0,
+        total_students_all_time:
+          Number(summaryRow.total_students_all_time) || 0,
+        total_students_year:
+          Number(summaryRow.total_students_year) || 0,
         total_students_attended:
           Number(summaryRow.total_students_attended) || 0,
         total_certificates_issued:
@@ -165,7 +590,29 @@ class CourseReportModel {
   static async getPrograms(reportStart, reportEnd) {
     const [rows] = await db.query(
       `
-        WITH filtered_openings AS (
+        WITH programs_in_year AS (
+          SELECT
+            id AS program_id,
+            program_name
+          FROM training_programs
+          WHERE year = YEAR(?)
+        ),
+
+        year_openings_by_program AS (
+          SELECT
+            c.program_id,
+            COUNT(DISTINCT cc.id) AS total_openings
+          FROM programs_in_year py
+          INNER JOIN courses c
+            ON c.program_id = py.program_id
+            AND c.deleted_at IS NULL
+          INNER JOIN course_classes cc
+            ON cc.course_id = c.id
+            AND cc.deleted_at IS NULL
+          GROUP BY c.program_id
+        ),
+
+        filtered_openings AS (
           SELECT
             cc.id AS opening_id,
             c.id AS course_id,
@@ -177,8 +624,8 @@ class CourseReportModel {
           INNER JOIN courses c
             ON c.id = cc.course_id
 
-          INNER JOIN training_programs tp
-            ON tp.id = c.program_id
+          INNER JOIN programs_in_year tp
+            ON tp.program_id = c.program_id
 
           WHERE cc.deleted_at IS NULL
             AND c.deleted_at IS NULL
@@ -204,7 +651,8 @@ class CourseReportModel {
         registered_by_program AS (
           SELECT
             fo.program_id,
-            COUNT(DISTINCT r.user_id) AS total_students_registered
+            COUNT(DISTINCT r.user_id) AS total_students_registered,
+            COUNT(DISTINCT r.id) AS total_registrations
 
           FROM filtered_openings fo
 
@@ -252,31 +700,39 @@ class CourseReportModel {
         )
 
         SELECT
-          op.program_id,
-          op.program_name,
-          op.total_courses,
-          op.total_openings,
+          py.program_id,
+          py.program_name,
+          COALESCE(op.total_courses, 0) AS total_courses,
+          COALESCE(yop.total_openings, 0) AS total_openings,
           COALESCE(rp.total_students_registered, 0)
             AS total_students_registered,
+          COALESCE(rp.total_registrations, 0)
+            AS total_registrations,
           COALESCE(ap.total_students_attended, 0)
             AS total_students_attended,
           COALESCE(cp.total_certificates_issued, 0)
             AS total_certificates_issued
 
-        FROM openings_by_program op
+        FROM programs_in_year py
+
+        LEFT JOIN openings_by_program op
+          ON op.program_id = py.program_id
+
+        LEFT JOIN year_openings_by_program yop
+          ON yop.program_id = py.program_id
 
         LEFT JOIN registered_by_program rp
-          ON rp.program_id = op.program_id
+          ON rp.program_id = py.program_id
 
         LEFT JOIN attended_by_program ap
-          ON ap.program_id = op.program_id
+          ON ap.program_id = py.program_id
 
         LEFT JOIN certificates_by_program cp
-          ON cp.program_id = op.program_id
+          ON cp.program_id = py.program_id
 
-        ORDER BY op.program_id ASC
+        ORDER BY py.program_id ASC
       `,
-      [reportEnd, reportStart],
+      [reportStart, reportEnd, reportStart],
     );
 
     return rows.map((item) => ({
@@ -286,6 +742,7 @@ class CourseReportModel {
       total_openings: Number(item.total_openings) || 0,
       total_students_registered:
         Number(item.total_students_registered) || 0,
+      total_registrations: Number(item.total_registrations) || 0,
       total_students_attended: Number(item.total_students_attended) || 0,
       total_certificates_issued:
         Number(item.total_certificates_issued) || 0,
@@ -407,6 +864,244 @@ class CourseReportModel {
     return {
       program_id: Number(rows[0].program_id),
       program_name: rows[0].program_name,
+    };
+  }
+
+  static async getProgramOverview(programId, filters = {}) {
+    const [[programRows], [openingRows], [registrationRows]] = await Promise.all([
+      db.query(
+        `
+          SELECT
+            id AS program_id,
+            program_name,
+            year,
+            description,
+            status
+          FROM training_programs
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [programId],
+      ),
+      db.query(
+        `
+          SELECT
+            c.id AS course_id,
+            c.course_name,
+            c.description,
+            c.duration,
+            c.target_audience,
+            c.learning_outcomes,
+            c.status,
+            cc.id AS opening_id,
+            cc.class_name,
+            DATE_FORMAT(cc.organization_start_date, '%Y-%m-%d')
+              AS organization_start_date,
+            DATE_FORMAT(cc.organization_end_date, '%Y-%m-%d')
+              AS organization_end_date,
+            cc.location,
+            cc.status AS operational_status
+          FROM courses c
+          LEFT JOIN course_classes cc
+            ON cc.course_id = c.id
+            AND cc.deleted_at IS NULL
+          WHERE c.program_id = ?
+            AND c.deleted_at IS NULL
+          ORDER BY c.id ASC, cc.id ASC
+        `,
+        [programId],
+      ),
+      db.query(
+        `
+          SELECT
+            r.id AS registration_id,
+            r.user_id,
+            c.id AS course_id,
+            cc.id AS opening_id,
+            u.gender,
+            u.age_group,
+            u.user_type,
+            u.company,
+            u.position,
+            r.has_project,
+            r.project_name,
+            r.project_field,
+            r.startup_stage,
+            r.project_description,
+            r.female_founder,
+            r.team_size,
+            r.incubation_status,
+            r.program_selection_status,
+            r.support_needs,
+            r.organizer_question,
+            r.register_status,
+            r.checked_in
+          FROM registrations r
+          INNER JOIN course_classes cc
+            ON cc.id = r.class_id
+            AND cc.deleted_at IS NULL
+          INNER JOIN courses c
+            ON c.id = cc.course_id
+            AND c.deleted_at IS NULL
+          INNER JOIN training_programs tp
+            ON tp.id = c.program_id
+          INNER JOIN users u
+            ON u.id = r.user_id
+          WHERE tp.id = ?
+            AND r.register_status IN ('PENDING', 'CONFIRMED')
+            AND r.user_id IS NOT NULL
+          ORDER BY r.id ASC
+        `,
+        [programId],
+      ),
+    ]);
+
+    if (!programRows[0]) {
+      return null;
+    }
+
+    const normalizedRows = registrationRows.map((row) => ({
+      ...row,
+      registration_id: Number(row.registration_id),
+      user_id: Number(row.user_id),
+      course_id: Number(row.course_id),
+      opening_id: Number(row.opening_id),
+      has_project: deriveHasProject(row.project_field, row.has_project),
+      female_founder: row.female_founder == null
+        ? null
+        : Boolean(Number(row.female_founder)),
+      checked_in: row.checked_in == null ? null : Boolean(Number(row.checked_in)),
+    }));
+    const filteredRows = normalizedRows.filter((row) => (
+      matchesOverviewFilters(row, filters)
+    ));
+    const selectedCourseId = filters.courseId ? Number(filters.courseId) : null;
+    const courseOpeningRows = selectedCourseId
+      ? openingRows.filter((row) => Number(row.course_id) === selectedCourseId)
+      : openingRows;
+    const scopedOpeningRows = filters.openingId
+      ? courseOpeningRows.filter((row) => Number(row.opening_id) === Number(filters.openingId))
+      : courseOpeningRows;
+    const registrationsByOpening = new Map();
+    const usersByOpening = new Map();
+    const usersByCourse = new Map();
+    const registrationsByCourse = new Map();
+
+    filteredRows.forEach((row) => {
+      registrationsByOpening.set(
+        row.opening_id,
+        (registrationsByOpening.get(row.opening_id) || 0) + 1,
+      );
+      if (!usersByOpening.has(row.opening_id)) usersByOpening.set(row.opening_id, new Set());
+      usersByOpening.get(row.opening_id).add(row.user_id);
+      if (!usersByCourse.has(row.course_id)) usersByCourse.set(row.course_id, new Set());
+      usersByCourse.get(row.course_id).add(row.user_id);
+      registrationsByCourse.set(
+        row.course_id,
+        (registrationsByCourse.get(row.course_id) || 0) + 1,
+      );
+    });
+
+    const coursesById = new Map();
+    scopedOpeningRows.forEach((row) => {
+      const courseId = Number(row.course_id);
+      if (!coursesById.has(courseId)) {
+        coursesById.set(courseId, {
+          course_id: courseId,
+          course_name: row.course_name,
+          description: row.description,
+          duration: row.duration,
+          target_audience: row.target_audience,
+          learning_outcomes: row.learning_outcomes,
+          status: row.status,
+          total_openings: 0,
+          organized_openings: 0,
+          unique_students: usersByCourse.get(courseId)?.size || 0,
+          total_registrations: registrationsByCourse.get(courseId) || 0,
+          openings: [],
+        });
+      }
+
+      if (row.opening_id !== null) {
+        const course = coursesById.get(courseId);
+        const operationalStatus = row.operational_status;
+        course.total_openings += 1;
+        if (operationalStatus === "FINISHED") course.organized_openings += 1;
+        course.openings.push({
+          opening_id: Number(row.opening_id),
+          class_name: row.class_name,
+          organization_start_date: row.organization_start_date,
+          organization_end_date: row.organization_end_date,
+          location: row.location,
+          operational_status: operationalStatus,
+          unique_students: usersByOpening.get(Number(row.opening_id))?.size || 0,
+          registered_count: registrationsByOpening.get(Number(row.opening_id)) || 0,
+        });
+      }
+    });
+
+    const analyses = {};
+    PROGRAM_OVERVIEW_USER_FIELDS.forEach((definition) => {
+      analyses[definition.key] = overviewAnalysis(filteredRows, definition, "USER");
+    });
+    PROGRAM_OVERVIEW_REGISTRATION_FIELDS.forEach((definition) => {
+      analyses[definition.key] = overviewAnalysis(
+        filteredRows,
+        definition,
+        "REGISTRATION",
+      );
+    });
+
+    const program = programRows[0];
+    const courses = [...coursesById.values()];
+
+    return {
+      program: {
+        program_id: Number(program.program_id),
+        program_name: program.program_name,
+        year: program.year == null ? null : Number(program.year),
+        description: program.description,
+        status: program.status,
+      },
+      summary: {
+        total_courses: courses.length,
+        total_openings: courses.reduce((sum, course) => sum + course.total_openings, 0),
+        organized_openings: courses.reduce(
+          (sum, course) => sum + course.organized_openings,
+          0,
+        ),
+        unique_students: new Set(filteredRows.map((row) => row.user_id)).size,
+        total_registrations: filteredRows.length,
+      },
+      courses,
+      analyses,
+      filter_options: {
+        openings: courseOpeningRows
+          .filter((row) => row.opening_id !== null)
+          .map((row) => ({
+            value: Number(row.opening_id),
+            label: row.class_name,
+          })),
+        courses: [...new Map(openingRows.map((row) => [Number(row.course_id), {
+          value: Number(row.course_id),
+          label: row.course_name,
+        }])).values()],
+        gender: uniqueOptions(normalizedRows, "gender"),
+        age_group: uniqueOptions(normalizedRows, "age_group"),
+        user_type: uniqueOptions(normalizedRows, "user_type"),
+        company: uniqueOptions(normalizedRows, "company"),
+        position: uniqueOptions(normalizedRows, "position"),
+        has_project: [...new Set(normalizedRows
+          .filter((row) => row.has_project !== null)
+          .map((row) => row.has_project))],
+        project_field: uniqueOptions(normalizedRows, "project_field"),
+        startup_stage: uniqueOptions(normalizedRows, "startup_stage"),
+        program_selection_status: uniqueOptions(
+          normalizedRows,
+          "program_selection_status",
+        ),
+        register_status: uniqueOptions(normalizedRows, "register_status"),
+      },
     };
   }
 
@@ -788,9 +1483,15 @@ class CourseReportModel {
           u.email,
           u.phone,
           u.gender,
+          u.age_group,
           u.user_type,
           u.company,
           u.position,
+          r.has_project,
+          r.project_field,
+          r.startup_stage,
+          r.program_selection_status,
+          r.support_needs,
           r.register_status,
           CASE
             WHEN COALESCE(ar.attended_sessions, 0) > 0 THEN 1
@@ -837,10 +1538,20 @@ class CourseReportModel {
       full_name: item.full_name,
       email: item.email,
       phone: item.phone,
-      gender: item.gender,
-      user_type: item.user_type,
-      company: item.company,
-      position: item.position,
+      gender: normalizeOverviewValue("gender", item.gender),
+      age_group: normalizeOverviewValue("age_group", item.age_group),
+      user_type: normalizeOverviewValue("user_type", item.user_type),
+      company: normalizeOverviewValue("company", item.company),
+      position: normalizeOverviewValue("position", item.position),
+      has_project: deriveHasProject(item.project_field, item.has_project),
+      project_field: item.project_field,
+      analytics_project_fields: normalizeOverviewValues("project_field", item.project_field),
+      project_stage: normalizeOverviewValue("startup_stage", item.startup_stage),
+      program_selection_status: normalizeOverviewValue(
+        "program_selection_status",
+        item.program_selection_status,
+      ),
+      support_needs: item.support_needs,
       register_status: item.register_status,
       attended: Boolean(Number(item.attended)),
       attended_sessions: Number(item.attended_sessions) || 0,

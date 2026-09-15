@@ -25,14 +25,42 @@ function getFieldLabel(field, fields) {
   return fields.find((item) => item.value === field)?.label || field;
 }
 
+function buildAutoMapping(headers, targetType) {
+  const detected = {};
+  const usedFields = new Set();
+
+  headers.forEach((header) => {
+    if (String(header).startsWith("[Cột trống")) {
+      detected[header] = "__IGNORE__";
+      return;
+    }
+
+    const field = detectGoogleFormField(header, targetType);
+    if (!field.startsWith("__") && usedFields.has(field)) {
+      detected[header] = "__EXTRA__";
+      return;
+    }
+
+    detected[header] = field;
+    if (!field.startsWith("__")) usedFields.add(field);
+  });
+
+  return detected;
+}
+
 // =====================================================
 // COMPONENT
 // =====================================================
 
-function GoogleFormFieldMapping({ selectedSheet, target, onMappingChange }) {
-  const headers = selectedSheet?.headers || [];
+function GoogleFormFieldMapping({ selectedSheet, target, mappingIdentity, onMappingChange }) {
+  const headers = useMemo(
+    () => selectedSheet?.headers || [],
+    [selectedSheet?.headers],
+  );
 
-  const [mapping, setMapping] = useState({});
+  const [mapping, setMapping] = useState(() =>
+    buildAutoMapping(headers, target?.type),
+  );
 
   // =====================================================
   // FIELD THEO MODULE
@@ -47,35 +75,6 @@ function GoogleFormFieldMapping({ selectedSheet, target, onMappingChange }) {
     () => [...availableFields, ...SPECIAL_MAPPING_OPTIONS],
     [availableFields],
   );
-
-  // =====================================================
-  // AUTO MAP
-  // =====================================================
-
-  useEffect(() => {
-    const detected = {};
-
-    headers.forEach((header) => {
-      /*
-       * Placeholder do reader tạo ra:
-       * đây mới thực sự là cột kỹ thuật nên bỏ.
-       */
-      if (String(header).startsWith("[Cột trống")) {
-        detected[header] = "__IGNORE__";
-
-        return;
-      }
-
-      /*
-       * Mapper không nhận diện được
-       * => __EXTRA__
-       * => GIỮ dữ liệu.
-       */
-      detected[header] = detectGoogleFormField(header);
-    });
-
-    setMapping(detected);
-  }, [selectedSheet?.sheetName, target?.type]);
 
   // =====================================================
   // REPORT RA PARENT
@@ -101,10 +100,14 @@ function GoogleFormFieldMapping({ selectedSheet, target, onMappingChange }) {
      * Event sau này có thể điều chỉnh rule
      * trong Cleaner/Validator.
      */
-    const isComplete = hasFullname && (target?.type !== "TRAINING" || hasPhone);
+    const requiredFields = target?.type === "EXHIBITION"
+      ? availableFields.filter((field) => field.required).map((field) => field.value)
+      : ["fullname"];
+    const isComplete = requiredFields.every((field) => mappedFields.includes(field));
 
     onMappingChange({
       mapping,
+      mappingIdentity,
 
       isComplete,
 
@@ -112,7 +115,7 @@ function GoogleFormFieldMapping({ selectedSheet, target, onMappingChange }) {
       hasPhone,
       hasEmail,
     });
-  }, [mapping, target?.type, onMappingChange]);
+  }, [availableFields, mapping, mappingIdentity, target?.type, onMappingChange]);
 
   // =====================================================
   // STATS
@@ -154,12 +157,16 @@ function GoogleFormFieldMapping({ selectedSheet, target, onMappingChange }) {
       issues.push("Chưa xác định cột Họ và tên.");
     }
 
-    if (target?.type === "TRAINING" && !fields.includes("phone")) {
-      issues.push("Khóa đào tạo cần cột Số điện thoại.");
+    if (target?.type === "EXHIBITION") {
+      availableFields
+        .filter((field) => field.required && field.value !== "fullname")
+        .forEach((field) => {
+          if (!fields.includes(field.value)) issues.push(`Chưa xác định cột ${field.label}.`);
+        });
     }
 
     return issues;
-  }, [mapping, target?.type]);
+  }, [availableFields, mapping, target?.type]);
 
   // =====================================================
   // DUPLICATE TARGET FIELD

@@ -118,7 +118,14 @@ function getUserTypeLabel(type) {
     STUDENT: "Sinh viên",
     BUSINESS: "Doanh nghiệp",
     UNIVERSITY: "Trường đại học",
-    OTHER: "Khác",
+    SME: "Doanh nghiệp SME",
+    STARTUP_COMPANY: "Doanh nghiệp khởi nghiệp sáng tạo",
+    STARTUP_PROJECT: "Startup/Dự án chưa thành lập doanh nghiệp",
+    EDUCATOR: "Giảng viên/giáo viên",
+    SUPPORT_ORGANIZATION: "Tổ chức hỗ trợ khởi nghiệp",
+    INVESTMENT_FUND: "Quỹ đầu tư",
+    COOPERATIVE: "Hợp tác xã, làng nghề",
+    OTHER: "Không có dữ liệu",
   };
 
   return labels[type] || type || "—";
@@ -312,6 +319,7 @@ export default function RegisterManagement() {
       });
 
       const registrationList = response.data.data || [];
+      const registrationTotal = Number(response.data.total) || 0;
       setStudentRegistrations(registrationList);
       const selected = registrationList.find(
         (item) => Number(item.id) === Number(registrationId),
@@ -355,7 +363,7 @@ export default function RegisterManagement() {
         register_status:
           selected.register_status || selected.registration_status,
 
-        total_registrations: registrationList.length,
+        total_registrations: registrationTotal,
       });
 
       setSelectedRegistrationDetail(selected);
@@ -678,7 +686,7 @@ export default function RegisterManagement() {
   );
   addFilterChip(
     "training_course_id",
-    "Khóa đào tạo",
+    "Nhiệm vụ đào tạo",
     filters.training_course_id
       ? findOptionName(filterOptions.training_courses, filters.training_course_id)
       : "",
@@ -694,7 +702,7 @@ export default function RegisterManagement() {
   );
   addFilterChip(
     "course_id",
-    "Lớp học",
+    "Nhiệm vụ khóa đào tạo",
     filters.course_id
       ? findOptionName(filterOptions.classes, filters.course_id)
       : "",
@@ -901,10 +909,14 @@ export default function RegisterManagement() {
         "
       >
         <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Tổng học viên phù hợp</p>
+          <p className="text-sm text-slate-500">Tổng học viên đào tạo</p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
             {pagination.total}
+          </p>
+
+          <p className="mt-2 text-xs text-slate-500">
+            Không giới hạn theo năm; mỗi học viên được tính một lần.
           </p>
         </div>
 
@@ -1132,7 +1144,7 @@ export default function RegisterManagement() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Khóa đào tạo
+                  Nhiệm vụ đào tạo
                 </label>
 
                 <select
@@ -1165,7 +1177,7 @@ export default function RegisterManagement() {
       focus:ring-green-100
     "
                 >
-                  <option value="">Tất cả khóa đào tạo</option>
+                  <option value="">Tất cả nhiệm vụ đào tạo</option>
 
                   {filterOptions.training_courses.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -1175,11 +1187,11 @@ export default function RegisterManagement() {
                 </select>
               </div>
 
-              {/* LỚP HỌC */}
+              {/* NHIỆM VỤ KHÓA ĐÀO TẠO */}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Lớp học
+                  Nhiệm vụ khóa đào tạo
                 </label>
 
                 <select
@@ -1211,7 +1223,7 @@ export default function RegisterManagement() {
       focus:ring-green-100
     "
                 >
-                  <option value="">Tất cả lớp học</option>
+                  <option value="">Tất cả nhiệm vụ khóa đào tạo</option>
 
                   {availableClasses.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -1589,7 +1601,7 @@ export default function RegisterManagement() {
 
                 <th className="px-5 py-4">Số lớp tham gia</th>
 
-                <th className="px-5 py-4">Lớp học đã tham gia</th>
+                <th className="px-5 py-4">Nhiệm vụ khóa đào tạo đã tham gia</th>
 
                 <th className="px-5 py-4">Lĩnh vực phù hợp</th>
 
@@ -2128,7 +2140,7 @@ export default function RegisterManagement() {
                   text-slate-500
                 "
                     >
-                      Toàn bộ khóa và lớp học viên đã đăng ký.
+                      Toàn bộ nhiệm vụ đào tạo, nhiệm vụ khóa đào tạo và đợt tổ chức học viên đã đăng ký.
                     </p>
                   </div>
 
@@ -2143,7 +2155,7 @@ export default function RegisterManagement() {
                 text-green-700
               "
                   >
-                    {studentRegistrations.length} lượt đăng ký
+                    {studentDetail.total_registrations} lượt đăng ký
                   </span>
                 </div>
 
@@ -2164,9 +2176,9 @@ export default function RegisterManagement() {
                     >
                       <thead className="bg-slate-50">
                         <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <th className="px-5 py-4">Khóa đào tạo</th>
+                          <th className="px-5 py-4">Nhiệm vụ đào tạo</th>
 
-                          <th className="px-5 py-4">Lớp học</th>
+                          <th className="px-5 py-4">Nhiệm vụ khóa đào tạo</th>
 
                           <th className="px-5 py-4">Đợt tổ chức</th>
 
@@ -2187,7 +2199,7 @@ export default function RegisterManagement() {
                           text-slate-500
                         "
                             >
-                              Học viên chưa đăng ký khóa học nào.
+                              Học viên chưa có lượt đăng ký đào tạo nào.
                             </td>
                           </tr>
                         ) : (

@@ -137,7 +137,10 @@ class RegistrationService {
       }
       if (!hasProject) {
         data.project_name = null;
-        data.project_field = null;
+        data.project_field = String(data.project_field || "").trim()
+          === "Chưa có dự án khởi nghiệp"
+          ? "Chưa có dự án khởi nghiệp"
+          : null;
         data.startup_stage = null;
         data.project_description = null;
         data.female_founder = null;

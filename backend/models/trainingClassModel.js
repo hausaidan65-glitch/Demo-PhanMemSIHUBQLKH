@@ -1,5 +1,28 @@
 const db = require("../config/db");
 
+function withCanonicalMission(row) {
+  const {
+    canonical_mission_name,
+    canonical_mission_source,
+    canonical_mission_status,
+    ...course
+  } = row;
+
+  course.mission_id = course.mission_id === null
+    ? null
+    : Number(course.mission_id);
+  course.canonical_mission = course.mission_id === null
+    ? null
+    : {
+        id: course.mission_id,
+        mission_name: canonical_mission_name,
+        mission_source: canonical_mission_source,
+        status: canonical_mission_status,
+      };
+
+  return course;
+}
+
 class TrainingClassModel {
   // =========================================================
   // DANH SÁCH LỚP HỌC
@@ -188,6 +211,7 @@ class TrainingClassModel {
         c.target_audience,
       c.learning_outcomes,
 c.mission,
+c.mission_id,
 c.status,  
         c.created_at,
         c.updated_at,
@@ -195,6 +219,10 @@ c.status,
         tp.id AS training_course_id,
 
         tp.program_name AS training_course_name,
+
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
         COUNT(DISTINCT cc.id) AS total_class_openings,
 
@@ -218,6 +246,8 @@ c.status,
 
       INNER JOIN training_programs tp
         ON tp.id = c.program_id
+      LEFT JOIN missions m
+        ON m.id = c.mission_id
 LEFT JOIN course_classes cc
   ON cc.course_id = c.id
  AND cc.deleted_at IS NULL
@@ -235,11 +265,15 @@ LEFT JOIN course_classes cc
         c.target_audience,
 c.learning_outcomes,
 c.mission,
+c.mission_id,
 c.status,
         c.created_at,
         c.updated_at,
         tp.id,
-        tp.program_name
+        tp.program_name,
+        m.mission_name,
+        m.mission_source,
+        m.status
 
       ORDER BY c.id DESC
     `,
@@ -247,7 +281,7 @@ c.status,
     );
 
     return rows.map((item) => ({
-      ...item,
+      ...withCanonicalMission(item),
 
       id: Number(item.id) || null,
 
@@ -320,6 +354,7 @@ c.status,
         c.target_audience,
         c.learning_outcomes,
         c.mission,
+        c.mission_id,
         c.status,
         c.created_at,
         c.updated_at,
@@ -327,6 +362,10 @@ c.status,
         tp.id AS training_course_id,
 
         tp.program_name AS training_course_name,
+
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
         COUNT(DISTINCT cc.id) AS total_class_openings,
 
@@ -339,6 +378,8 @@ c.status,
 
       INNER JOIN training_programs tp
         ON tp.id = c.program_id
+      LEFT JOIN missions m
+        ON m.id = c.mission_id
 
     LEFT JOIN course_classes cc
   ON cc.course_id = c.id
@@ -358,11 +399,15 @@ c.status,
         c.target_audience,
         c.learning_outcomes,
         c.mission,
+        c.mission_id,
         c.status,
         c.created_at,
         c.updated_at,
         tp.id,
-        tp.program_name
+        tp.program_name,
+        m.mission_name,
+        m.mission_source,
+        m.status
 
       LIMIT 1
     `,
@@ -374,7 +419,7 @@ c.status,
     }
 
     return {
-      ...rows[0],
+      ...withCanonicalMission(rows[0]),
 
       id: Number(rows[0].id) || null,
 
@@ -655,10 +700,11 @@ COALESCE(
   target_audience,
   learning_outcomes,
   mission,
+  mission_id,
   status
 )
 
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)  
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       [
         data.training_course_id,
@@ -680,6 +726,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         data.learning_outcomes || null,
 
         data.mission || null,
+
+        data.mission_id ?? null,
 
         data.status || "OPEN",
       ],
@@ -1087,7 +1135,8 @@ max_students = ?,
         duration = ?,
         target_audience = ?,
         learning_outcomes = ?,
-        mission = ?,
+        mission = IF(?, ?, mission),
+        mission_id = IF(?, ?, mission_id),
         status = ?
 
       WHERE id = ?
@@ -1110,7 +1159,10 @@ max_students = ?,
         data.target_audience || null,
 
         data.learning_outcomes || null,
+        data.mission_provided ? 1 : 0,
         data.mission || null,
+        data.mission_id_provided ? 1 : 0,
+        data.mission_id,
 
         data.status || "OPEN",
 

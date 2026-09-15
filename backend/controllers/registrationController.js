@@ -59,6 +59,13 @@ class RegistrationController {
     } catch (error) {
       console.error("Lỗi lấy danh sách đăng ký:", error);
 
+      if (error.code === "INVALID_USER_ID") {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
       return res.status(500).json({
         success: false,
         message: "Không thể lấy danh sách đăng ký.",

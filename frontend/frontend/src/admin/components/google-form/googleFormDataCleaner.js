@@ -50,7 +50,7 @@ function normalizePhone(value) {
    */
   const firstCandidate =
     raw
-      .split(/[\/,;|\n]+/)
+      .split(/[/,;|\n]+/)
       .map((item) => item.trim())
       .find(Boolean) || raw;
 
@@ -79,11 +79,15 @@ function normalizeBoolean(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d");
 
-  if (["co", "yes", "true", "1"].includes(text)) {
+  if (["co", "yes", "true", "1"].includes(text)
+    || text.includes("da co y tuong")
+    || text.includes("da co du an")) {
     return true;
   }
 
-  if (["khong", "no", "false", "0"].includes(text)) {
+  if (["khong", "no", "false", "0"].includes(text)
+    || text.includes("chua co y tuong")
+    || text.includes("chua co du an")) {
     return false;
   }
 
@@ -94,7 +98,70 @@ function normalizeBoolean(value) {
 // VALUE THEO FIELD
 // =====================================================
 
-function normalizeValue(field, value) {
+const EXHIBITION_NUMERIC_FIELDS = new Set([
+  "exhibition_product_quantity",
+  "sold_or_ordered_quantity",
+  "visitor_count",
+  "b2b_matching_count",
+  "public_sector_connection_count",
+  "mou_count",
+  "exhibition_revenue",
+]);
+const EXHIBITION_EXPLICIT_ZERO_VALUES = new Set([
+  "khong",
+  "khong co",
+  "chua",
+  "chua co",
+  "van chua",
+  "n/a",
+]);
+
+function normalizeExhibitionNumericValue(value) {
+  const text = cleanText(value);
+  const comparableText = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+
+  if (text === "" || EXHIBITION_EXPLICIT_ZERO_VALUES.has(comparableText)) {
+    return 0;
+  }
+
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(text)) {
+    return Number(text.replace(/\./g, ""));
+  }
+
+  if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) {
+    const numberValue = Number(text);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+  }
+
+  const certainCount = comparableText.match(
+    /^~\s*(\d+(?:\.\d+)?|\.\d+)\s*(?:luot|dich vu|san pham|ma hang|mou)?$|^(\d+(?:\.\d+)?|\.\d+)\s+(?:luot|dich vu|san pham|ma hang|mou)$/,
+  );
+  if (certainCount) {
+    return Number(certainCount[1] || certainCount[2]);
+  }
+
+  const certainMillions = comparableText.match(
+    /^~?\s*(\d+(?:[.,]\d+)?)\s*trieu(?:\s*(?:vnd|vnđ|dong))?$/,
+  );
+  if (certainMillions) {
+    return Number(certainMillions[1].replace(",", ".")) * 1000000;
+  }
+
+  const certainCurrency = comparableText.match(
+    /^(\d{1,3}(?:\.\d{3})+|\d+)\s*(?:vnd|vnđ|dong)$/,
+  );
+  if (certainCurrency) {
+    return Number(certainCurrency[1].replace(/\./g, ""));
+  }
+
+  return 0;
+}
+
+export function normalizeValue(field, value, targetType = null) {
   if (field === "email") {
     return normalizeEmail(value);
   }
@@ -111,6 +178,11 @@ function normalizeValue(field, value) {
     }
   }
 
+  if (targetType === "EXHIBITION" && EXHIBITION_NUMERIC_FIELDS.has(field)) {
+    const normalizedValue = normalizeExhibitionNumericValue(value);
+    return normalizedValue;
+  }
+
   return cleanText(value);
 }
 
@@ -118,18 +190,10 @@ function normalizeValue(field, value) {
 // DEDUPE KEY
 // =====================================================
 
-function buildDuplicateKey(data = {}) {
+function buildDuplicateKey(data = {}, target = null) {
   const email = normalizeEmail(data.email);
 
   const phone = normalizePhone(data.phone);
-
-  /*
-   * Có cả 2:
-   * dùng cả hai để chắc chắn hơn.
-   */
-  if (email && phone) {
-    return `email:${email}|phone:${phone}`;
-  }
 
   if (email) {
     return `email:${email}`;
@@ -139,7 +203,21 @@ function buildDuplicateKey(data = {}) {
     return `phone:${phone}`;
   }
 
-  return "";
+  const fullname = cleanText(data.fullname)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+
+  const targetIdentity = target?.type === "EXHIBITION"
+    ? (target.eventId ? `exhibition:${target.eventId}` : "")
+    : target?.type === "NETWORKING"
+      ? (target.eventId ? `networking:${target.eventId}` : "")
+      : (target?.openingId ? `opening:${target.openingId}` : "");
+
+  return fullname && targetIdentity
+    ? `${targetIdentity}|fullname:${fullname}`
+    : "";
 }
 
 // =====================================================
@@ -190,7 +268,7 @@ function buildCleanRow({ sourceRow, mapping, target }) {
     // MAPPED FIELD
     // ---------------------------------------------
 
-    data[targetField] = normalizeValue(targetField, rawValue);
+    data[targetField] = normalizeValue(targetField, rawValue, target?.type);
   }
 
   // =====================================================
@@ -222,16 +300,25 @@ function buildCleanRow({ sourceRow, mapping, target }) {
     };
   }
 
+  const rowTargetType = sourceRow?.routing?.targetType;
+  if (rowTargetType && target?.type && rowTargetType !== target.type) {
+    errors.push(
+      `NHIỆM VỤ của dòng là "${sourceRow.routing.taskValue}" (${rowTargetType}), không thuộc target ${target.type}.`,
+    );
+  }
+
+  if (sourceRow?.routing?.metadataConflict) {
+    errors.push(
+      `Mâu thuẫn Tên sự kiện "${sourceRow.routing.metadataEventName}" và CHƯƠNG TRÌNH "${sourceRow.routing.programName}".`,
+    );
+  }
+
   // =====================================================
   // REQUIRED
   // =====================================================
 
   if (!cleanText(data.fullname)) {
     errors.push("Thiếu Họ và tên.");
-  }
-
-  if (target?.type === "TRAINING" && !normalizePhone(data.phone)) {
-    errors.push("Thiếu Số điện thoại.");
   }
 
   // =====================================================
@@ -281,7 +368,7 @@ function buildCleanRow({ sourceRow, mapping, target }) {
 
     errors,
 
-    duplicateKey: buildDuplicateKey(data),
+    duplicateKey: buildDuplicateKey(data, target),
   };
 }
 
@@ -293,6 +380,7 @@ export function cleanGoogleFormRows({
   dataRows = [],
   mapping = {},
   target = null,
+  batchDuplicateKeys = [],
 }) {
   const result = [];
 
@@ -310,6 +398,12 @@ export function cleanGoogleFormRows({
     // ===================================================
 
     if (cleaned.status !== "JUNK" && cleaned.duplicateKey) {
+      if (batchDuplicateKeys.includes(cleaned.duplicateKey)) {
+        cleaned.status = "DUPLICATE_BATCH";
+        cleaned.warnings.push("Trùng học viên với file trước trong cùng batch.");
+        result.push(cleaned);
+        continue;
+      }
       const existed = duplicateMap.get(cleaned.duplicateKey);
 
       if (existed) {
@@ -366,6 +460,7 @@ export function cleanGoogleFormRows({
         break;
 
       case "DUPLICATE_FILE":
+      case "DUPLICATE_BATCH":
         summary.duplicate += 1;
         break;
 

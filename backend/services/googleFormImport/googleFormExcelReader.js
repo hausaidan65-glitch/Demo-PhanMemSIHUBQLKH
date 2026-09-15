@@ -22,6 +22,169 @@ function normalizeText(value) {
     .replace(/\s+/g, " ");
 }
 
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function toIsoDate(day, month, year) {
+  const d = Number(day);
+  const m = Number(month);
+  const y = Number(year);
+  if (!d || !m || !y || y < 2000 || y > 2100 || m > 12 || d > 31) return null;
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function extractExhibitionFilenameMetadata(fileName) {
+  const baseName = String(fileName || "")
+    .replace(/\.(xlsx|xls)$/i, "")
+    .replace(/^\s*20\d{2}\s*[-–—:]\s*/i, "")
+    .replace(/^\s*khảo\s+sát\s+sau\s+triển\s+lãm\s*/i, "")
+    .replace(/\s*\(\s*câu\s+trả\s+lời\s*\)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const years = unique((String(fileName || "").match(/\b20\d{2}\b/g) || []).map(Number));
+
+  return {
+    exhibitionFilenameName: baseName || null,
+    exhibitionFilenameYear: years.length === 1 ? years[0] : null,
+  };
+}
+
+function isGenericTrainingMetadataLine(value) {
+  const text = normalizeText(value).replace(/[.:\-–]+$/g, "").trim();
+
+  if (!text) return true;
+
+  return (
+    /^(danh sach|phieu|bieu mau)(\s|$)/.test(text) ||
+    /^(don vi|don vi to chuc|co quan|dia chi|dia diem|thoi gian)(\s*:|$)/.test(text) ||
+    /^(trung tam|so|ban|vien|hoc vien|truong|cong ty|hiep hoi)(\s|$)/.test(text)
+  );
+}
+
+function splitTrainingHierarchy(titleLines = []) {
+  const lines = titleLines.map(cleanCell).filter(Boolean);
+  const combinedPattern = /^(?:danh\s+sách\s+)?(lớp\s+[^\-–:]+?)\s*[\-–:]\s*(.+)$/i;
+  const combinedLine = lines.find((line) => combinedPattern.test(line));
+  const combined = combinedLine?.match(combinedPattern);
+  const hierarchyLines = lines.filter(
+    (line) => line !== combinedLine && !isGenericTrainingMetadataLine(line),
+  );
+  const findLabeledValue = (pattern) => {
+    const matched = hierarchyLines.map((line) => line.match(pattern)).find(Boolean);
+    return matched?.[1]?.trim() || null;
+  };
+  const labeledProgramName = findLabeledValue(
+    /^(?:tên\s+)?(?:chương\s+trình|nhiệm\s+vụ\s+đào\s+tạo)\s*:\s*(.+)$/i,
+  );
+  const relatedProgramName = findLabeledValue(
+    /^thuộc\s+((?:chương\s+trình|nhiệm\s+vụ\s+đào\s+tạo)\s+.+)$/i,
+  );
+  const labeledCourseName = findLabeledValue(
+    /^(?:tên\s+)?(?:course|khóa\s+học|nhiệm\s+vụ\s+khóa\s+đào\s+tạo)\s*:\s*(.+)$/i,
+  );
+  const labeledOpeningName = findLabeledValue(
+    /^(?:tên\s+)?(?:lớp|khóa\s+đào\s+tạo|đợt\s+tổ\s+chức|opening)\s*:\s*(.+)$/i,
+  );
+  const programIndex = hierarchyLines.findIndex((line) =>
+    /^(chương\s+trình|nhiệm\s+vụ\s+đào\s+tạo)(\s|:|$)/i.test(line),
+  );
+  const trainingProgramName = labeledProgramName || relatedProgramName || (programIndex >= 0
+    ? hierarchyLines[programIndex]
+    : null);
+  const openingName = labeledOpeningName
+    || combined?.[1]?.trim()
+    || hierarchyLines.find((line) => /^lớp\s+.+/i.test(line))
+    || null;
+  const courseName = labeledCourseName
+    || combined?.[2]?.trim()
+    || null;
+
+  return {
+    trainingProgramName,
+    courseName,
+    openingName,
+  };
+}
+
+// Metadata is deliberately read from workbook cells before the detected header.
+// The filename is never used as a source and missing values remain unresolved.
+function extractSheetMetadata(rows = [], headerRowIndex = -1, totalStudents = 0) {
+  const metadataRows = rows.slice(0, headerRowIndex < 0 ? Math.min(rows.length, 15) : headerRowIndex);
+  const texts = metadataRows.flatMap((row) => (Array.isArray(row) ? row : []))
+    .map(cleanCell).filter(Boolean);
+  const combined = texts.join("\n");
+  const years = unique((combined.match(/\b(20\d{2})\b/g) || []).map(Number));
+  const dates = [];
+  const locationLine = texts.find((text) => /^địa\s*điểm\s*:/i.test(text));
+  const location = locationLine?.replace(/^địa\s*điểm\s*:\s*/i, "").trim() || null;
+  const labeledExhibition = texts.map((text) =>
+    text.match(/^(?:tên\s+)?triển\s+lãm\s*:\s*(.+)$/i),
+  ).find(Boolean);
+  const exhibitionName = labeledExhibition?.[1]?.trim()
+    || texts.find((text) => /^triển\s+lãm\s+.+/i.test(text))
+    || null;
+  const labeledNetworking = texts.map((text) =>
+    text.match(/^(?:tên\s+)?(?:sự\s+kiện\s+kết\s+nối|sự\s+kiện)\s*:\s*(.+)$/i),
+  ).find(Boolean);
+  const networkingEventName = labeledNetworking?.[1]?.trim()
+    || texts.find((text) => /^sự\s+kiện\s+kết\s+nối\s+.+/i.test(text))
+    || null;
+
+  // Supports "17 & 19/08/2026" as well as ordinary dd/mm/yyyy values.
+  for (const match of combined.matchAll(/\b(\d{1,2})\s*(?:&|,|và)\s*(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/gi)) {
+    dates.push(toIsoDate(match[1], match[3], match[4]), toIsoDate(match[2], match[3], match[4]));
+  }
+  for (const match of combined.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/g)) {
+    dates.push(toIsoDate(match[1], match[2], match[3]));
+  }
+  const sessionHeadingDates = [];
+  if (headerRowIndex >= 0 && years.length === 1) {
+    const possibleSessionRows = rows.slice(headerRowIndex + 1, headerRowIndex + 3);
+    possibleSessionRows.forEach((row) => {
+      const rowDates = (Array.isArray(row) ? row : []).map(cleanCell)
+        .map((cell) => cell.match(/^(\d{1,2})\s*\/\s*(\d{1,2})(?:\s|\(|$)/))
+        .filter(Boolean);
+      if (rowDates.length < 2) return;
+      rowDates.forEach((match) => {
+        sessionHeadingDates.push(toIsoDate(match[1], match[2], years[0]));
+      });
+    });
+  }
+  const times = unique([...combined.matchAll(/\b([01]?\d|2[0-3])[:h]([0-5]\d)(?:\s*[-–]\s*([01]?\d|2[0-3])[:h]([0-5]\d))?/gi)]
+    .map((match) => ({ startTime: `${String(match[1]).padStart(2, "0")}:${match[2]}`, endTime: match[3] ? `${String(match[3]).padStart(2, "0")}:${match[4]}` : null }))
+    .map((item) => JSON.stringify(item))).map(JSON.parse);
+  const titleLines = texts.filter((text) => !/^(thời gian|địa điểm)\s*:/i.test(text));
+  const hierarchy = splitTrainingHierarchy(titleLines);
+  const resolvedDates = sessionHeadingDates.length >= 2
+    ? sessionHeadingDates
+    : unique(dates);
+  const sessions = resolvedDates.map((sessionDate, index) => ({
+    sessionDate,
+    startTime: times[index]?.startTime || times[0]?.startTime || null,
+    endTime: times[index]?.endTime || times[0]?.endTime || null,
+  }));
+  const missing = [];
+  if (!hierarchy.trainingProgramName) missing.push("trainingProgramName");
+  if (!hierarchy.courseName) missing.push("courseName");
+  if (years.length !== 1) missing.push("year");
+  if (!sessions.length) missing.push("date");
+  if (!sessions.length || sessions.some((item) => !item.startTime)) missing.push("time");
+
+  return {
+    ...hierarchy,
+    year: years.length === 1 ? years[0] : null,
+    yearCandidates: years,
+    sessions,
+    location,
+    exhibitionName,
+    networkingEventName,
+    studentCount: Number(totalStudents) || 0,
+    status: missing.length ? "NEEDS_ADMIN_CONFIRMATION" : "READY",
+    missing,
+  };
+}
+
 // =====================================================
 // HEADER KEYWORDS
 //
@@ -265,7 +428,44 @@ function buildSampleRows(
 // - Chưa quyết định dòng rác ở đây.
 // =====================================================
 
-function buildDataRows(rows = [], headerRowIndex = -1, headers = []) {
+function classifyTask(value) {
+  const task = normalizeText(value);
+  if (task === "ket noi") return "NETWORKING";
+  if (task === "hoi thao") return "SEMINAR";
+  return null;
+}
+
+function findValueByHeader(values = {}, expectedHeader) {
+  const entry = Object.entries(values).find(
+    ([header]) => normalizeText(header) === normalizeText(expectedHeader),
+  );
+  return cleanCell(entry?.[1]);
+}
+
+function buildRowRouting(values = {}, metadata = {}) {
+  const programName = findValueByHeader(values, "CHƯƠNG TRÌNH") || null;
+  const taskValue = findValueByHeader(values, "NHIỆM VỤ") || null;
+  const yearValue = findValueByHeader(values, "NĂM") || null;
+  const fullname = findValueByHeader(values, "Họ và Tên") || null;
+  const metadataEventName = metadata.networkingEventName || null;
+  const metadataConflict = Boolean(
+    metadataEventName
+    && programName
+    && normalizeText(metadataEventName) !== normalizeText(programName)
+  );
+
+  return {
+    targetType: classifyTask(taskValue),
+    taskValue,
+    programName,
+    year: /^20\d{2}$/.test(yearValue) ? Number(yearValue) : null,
+    fullname,
+    metadataEventName,
+    metadataConflict,
+  };
+}
+
+function buildDataRows(rows = [], headerRowIndex = -1, headers = [], metadata = {}) {
   if (headerRowIndex < 0 || headers.length === 0) {
     return [];
   }
@@ -290,6 +490,7 @@ function buildDataRows(rows = [], headerRowIndex = -1, headers = []) {
     result.push({
       rowNumber: index + 1,
       values,
+      routing: buildRowRouting(values, metadata),
     });
   }
 
@@ -389,8 +590,11 @@ function readGoogleFormWorkbook(file) {
     throw new Error("File Excel không có sheet dữ liệu.");
   }
 
+  const fileName = file.originalname || file.filename || "google-form.xlsx";
+  const exhibitionFilenameMetadata = extractExhibitionFilenameMetadata(fileName);
   const sheets = workbook.SheetNames.map((sheetName) => {
-    const worksheet = workbook.Sheets[sheetName];
+    try {
+      const worksheet = workbook.Sheets[sheetName];
 
     const rows = XLSX.utils.sheet_to_json(worksheet, {
       header: 1,
@@ -424,6 +628,49 @@ function readGoogleFormWorkbook(file) {
     // RETURN SHEET
     // ===================================================
 
+    const totalRows = countDataRows(rows, headerRowIndex);
+    const extractedMetadata = {
+      ...extractSheetMetadata(rows, headerRowIndex, totalRows),
+      ...exhibitionFilenameMetadata,
+    };
+    const dataRows = hasDetectedHeader
+      ? buildDataRows(rows, headerRowIndex, headers, extractedMetadata)
+      : [];
+    const routedParticipantRows = dataRows.filter((row) => row.routing?.fullname);
+    const moduleCounts = dataRows.reduce((counts, row) => {
+      const type = row.routing?.targetType;
+      if (type) counts[type] = (counts[type] || 0) + 1;
+      return counts;
+    }, {});
+    const detectedTypes = Object.keys(moduleCounts);
+    const participantPrograms = unique(
+      dataRows.map((row) => row.routing?.programName),
+    );
+    const metadataConflicts = dataRows
+      .filter((row) => row.routing?.metadataConflict)
+      .map((row) => ({
+        rowNumber: row.rowNumber,
+        metadataEventName: row.routing.metadataEventName,
+        participantProgramName: row.routing.programName,
+      }));
+    const detectedTargetType = detectedTypes.length === 1
+      ? detectedTypes[0]
+      : detectedTypes.length > 1 ? "MIXED" : null;
+    const metadata = {
+      ...extractedMetadata,
+      studentCount: headers.some((header) => normalizeText(header) === "ho va ten")
+        ? routedParticipantRows.length
+        : extractedMetadata.studentCount,
+      detectedTargetType,
+      moduleCounts,
+      participantPrograms,
+      metadataConflicts,
+      status: detectedTargetType === "MIXED" || metadataConflicts.length
+        ? "NEEDS_ADMIN_CONFIRMATION"
+        : extractedMetadata.status,
+    };
+    const isEmpty = rows.length === 0;
+
     return {
       sheetName,
 
@@ -448,7 +695,10 @@ function readGoogleFormWorkbook(file) {
       /*
        * Tổng số dòng dữ liệu thực tế.
        */
-      totalRows: countDataRows(rows, headerRowIndex),
+      totalRows,
+
+      metadata,
+      status: isEmpty ? "EMPTY" : metadata.status,
 
       /*
        * Preview có header.
@@ -456,19 +706,32 @@ function readGoogleFormWorkbook(file) {
       sampleRows: hasDetectedHeader
         ? buildSampleRows(rows, headerRowIndex, headers, 5)
         : [],
-      dataRows: hasDetectedHeader
-        ? buildDataRows(rows, headerRowIndex, headers)
-        : [],
+      dataRows,
 
       /*
        * Preview raw nếu không detect được header.
        */
       rawPreviewRows: !hasDetectedHeader ? buildRawPreviewRows(rows, 5) : [],
     };
+    } catch (error) {
+      return {
+        sheetName,
+        hasDetectedHeader: false,
+        headerRowNumber: null,
+        headers: [],
+        totalRows: 0,
+        metadata: null,
+        sampleRows: [],
+        dataRows: [],
+        rawPreviewRows: [],
+        status: "ERROR",
+        error: error.message || "Không thể đọc worksheet.",
+      };
+    }
   });
 
   return {
-    fileName: file.originalname || file.filename || "google-form.xlsx",
+    fileName,
 
     totalSheets: sheets.length,
 
@@ -482,4 +745,8 @@ function readGoogleFormWorkbook(file) {
 
 module.exports = {
   readGoogleFormWorkbook,
+  extractSheetMetadata,
+  extractExhibitionFilenameMetadata,
+  splitTrainingHierarchy,
+  classifyTask,
 };

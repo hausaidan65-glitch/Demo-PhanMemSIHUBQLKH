@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Loader2, X } from "lucide-react";
 
 const API_URL = "http://localhost:5000/api";
 const EMPTY_FORM = { program_name: "", description: "", status: "ACTIVE" };
@@ -12,6 +12,21 @@ const statusClass = (status) =>
   status === "ACTIVE"
     ? "border-green-200 bg-green-50 text-green-700"
     : "border-slate-200 bg-slate-100 text-slate-600";
+
+const classStatusLabel = (status) => ({
+  OPEN: "Đang mở",
+  FULL: "Đã đủ học viên",
+  CLOSED: "Đã đóng",
+  FINISHED: "Đã kết thúc",
+}[status] || status || "Chưa xác định");
+
+const formatDate = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("vi-VN").format(date);
+};
 
 export default function Programs() {
   const [programs, setPrograms] = useState([]);
@@ -26,6 +41,14 @@ export default function Programs() {
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [programCourses, setProgramCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+  const [detailLevel, setDetailLevel] = useState("PROGRAM");
+  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [courseClasses, setCourseClasses] = useState([]);
+  const [selectedClass, setSelectedClass] = useState(null);
+  const [classStudents, setClassStudents] = useState([]);
+  const [classStudentTotal, setClassStudentTotal] = useState(0);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
 
@@ -44,7 +67,7 @@ export default function Programs() {
       console.error(error.response?.data || error);
       alert(
         error.response?.data?.message ||
-          "Không thể tải danh sách chương trình đào tạo.",
+          "Không thể tải danh sách nhiệm vụ đào tạo.",
       );
     } finally {
       setLoading(false);
@@ -125,7 +148,7 @@ export default function Programs() {
     event.preventDefault();
 
     if (!formData.program_name.trim()) {
-      alert("Vui lòng nhập tên chương trình đào tạo.");
+      alert("Vui lòng nhập tên nhiệm vụ đào tạo.");
       return;
     }
 
@@ -148,8 +171,8 @@ export default function Programs() {
       alert(
         response.data.message ||
           (editingId
-            ? "Cập nhật chương trình thành công."
-            : "Thêm chương trình thành công."),
+            ? "Cập nhật nhiệm vụ thành công."
+            : "Thêm nhiệm vụ thành công."),
       );
       closeModal();
       await fetchPrograms();
@@ -164,6 +187,13 @@ export default function Programs() {
       setSelectedProgram(program);
       setShowCourseModal(true);
       setLoadingCourses(true);
+      setDetailLevel("PROGRAM");
+      setSelectedCourse(null);
+      setCourseClasses([]);
+      setSelectedClass(null);
+      setClassStudents([]);
+      setClassStudentTotal(0);
+      setDetailError("");
 
       const response = await axios.get(
         `${API_URL}/courses/program/${program.id}`,
@@ -180,9 +210,55 @@ export default function Programs() {
       setLoadingCourses(false);
     }
   };
+  const openCourseDetail = async (course) => {
+    try {
+      setSelectedCourse(course);
+      setDetailLevel("COURSE");
+      setLoadingDetail(true);
+      setDetailError("");
+      setCourseClasses([]);
+      const response = await axios.get(`${API_URL}/course-classes/course/${course.id}`);
+      setCourseClasses(response.data.data || []);
+    } catch (error) {
+      setCourseClasses([]);
+      setDetailError(
+        error.response?.data?.message || "Không thể tải danh sách Khóa đào tạo.",
+      );
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+  const openClassDetail = async (courseClass) => {
+    try {
+      setSelectedClass(courseClass);
+      setDetailLevel("CLASS");
+      setLoadingDetail(true);
+      setDetailError("");
+      setClassStudents([]);
+      setClassStudentTotal(0);
+      const [classResponse, studentResponse] = await Promise.all([
+        axios.get(`${API_URL}/course-classes/${courseClass.id}`),
+        axios.get(`${API_URL}/registrations`, {
+          ...authConfig,
+          params: { class_id: courseClass.id, limit: 100 },
+        }),
+      ]);
+      setSelectedClass(classResponse.data.data || courseClass);
+      setClassStudents(studentResponse.data.data || []);
+      setClassStudentTotal(Number(studentResponse.data.total) || 0);
+    } catch (error) {
+      setClassStudents([]);
+      setClassStudentTotal(0);
+      setDetailError(
+        error.response?.data?.message || "Không thể tải chi tiết Khóa đào tạo.",
+      );
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
   const handleDelete = async (program) => {
     const accepted = window.confirm(
-      `Xóa chương trình "${program.program_name}"?\n\nChương trình đang có khóa đào tạo sẽ không thể xóa.`,
+      `Xóa nhiệm vụ "${program.program_name}"?\n\nNhiệm vụ đang có khóa đào tạo sẽ không thể xóa.`,
     );
     if (!accepted) return;
 
@@ -192,7 +268,7 @@ export default function Programs() {
         `${API_URL}/training-programs/${program.id}`,
         authConfig,
       );
-      alert(response.data.message || "Xóa chương trình thành công.");
+      alert(response.data.message || "Xóa nhiệm vụ thành công.");
       await fetchPrograms();
       if (paginatedPrograms.length === 1 && safePage > 1) {
         setPage((previous) => Math.max(previous - 1, 1));
@@ -209,10 +285,10 @@ export default function Programs() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            Quản lý chương trình đào tạo
+            Quản lý nhiệm vụ đào tạo
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Quản lý các nhóm chương trình chính và tổng số khóa, lớp trực thuộc.
+            Quản lý các nhóm chương trình chính và tổng số khóa, đợt tổ chức trực thuộc.
           </p>
         </div>
 
@@ -230,13 +306,13 @@ export default function Programs() {
             onClick={openCreateModal}
             className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
           >
-            Thêm chương trình
+            Thêm nhiệm vụ
           </button>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Tổng chương trình" value={summary.total} />
+        <SummaryCard label="Tổng nhiệm vụ" value={summary.total} />
         <SummaryCard
           label="Đang hoạt động"
           value={summary.active}
@@ -248,7 +324,7 @@ export default function Programs() {
           valueClass="text-blue-600"
         />
         <SummaryCard
-          label="Tổng lớp học"
+          label="Tổng đợt tổ chức"
           value={summary.totalClasses}
           valueClass="text-violet-600"
         />
@@ -261,7 +337,7 @@ export default function Programs() {
             setSearch(event.target.value);
             setPage(1);
           }}
-          placeholder="Tìm tên chương trình, mô tả hoặc trạng thái..."
+          placeholder="Tìm tên nhiệm vụ, mô tả hoặc trạng thái..."
           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
         />
       </div>
@@ -272,9 +348,9 @@ export default function Programs() {
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-5 py-4">STT</th>
-                <th className="px-5 py-4">Chương trình đào tạo</th>
+                <th className="px-5 py-4">Nhiệm vụ đào tạo</th>
                 <th className="px-5 py-4 text-center">Số khóa</th>
-                <th className="px-5 py-4 text-center">Số lớp</th>
+                <th className="px-5 py-4 text-center">Số đợt tổ chức</th>
                 <th className="px-5 py-4">Trạng thái</th>
                 <th className="px-5 py-4 text-right">Thao tác</th>
               </tr>
@@ -289,7 +365,7 @@ export default function Programs() {
                       className="mx-auto animate-spin text-green-600"
                     />
                     <p className="mt-3 text-sm text-slate-500">
-                      Đang tải danh sách chương trình...
+                      Đang tải danh sách nhiệm vụ...
                     </p>
                   </td>
                 </tr>
@@ -299,7 +375,7 @@ export default function Programs() {
                     colSpan={6}
                     className="px-5 py-16 text-center text-slate-500"
                   >
-                    Không tìm thấy chương trình phù hợp.
+                    Không tìm thấy nhiệm vụ phù hợp.
                   </td>
                 </tr>
               ) : (
@@ -423,80 +499,241 @@ export default function Programs() {
       </div>
       {showCourseModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div
-            className="
-w-full max-w-4xl
-rounded-3xl
-bg-white
-shadow-2xl
-overflow-hidden
-"
-          >
-            <div
-              className="
-flex items-center justify-between
-border-b
-px-6 py-5
-"
-            >
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {selectedProgram?.program_name}
-                </h2>
-
-                <p className="text-sm text-slate-500 mt-1">
-                  {programCourses.length} khóa đào tạo thuộc chương trình này
+          <div className="w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+              <div className="min-w-0 pr-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-green-600">
+                  Chi tiết nhiệm vụ đào tạo
                 </p>
+                <h2 className="mt-1 break-words text-xl font-bold text-slate-900">
+                  {detailLevel === "PROGRAM"
+                    ? selectedProgram?.program_name
+                    : detailLevel === "COURSE"
+                      ? selectedCourse?.course_name
+                      : selectedClass?.class_name}
+                </h2>
               </div>
-
               <button
+                type="button"
                 onClick={() => {
                   setShowCourseModal(false);
                   setSelectedProgram(null);
                   setProgramCourses([]);
+                  setDetailLevel("PROGRAM");
+                  setSelectedCourse(null);
+                  setCourseClasses([]);
+                  setSelectedClass(null);
+                  setClassStudents([]);
+                  setDetailError("");
                 }}
+                aria-label="Đóng"
+                className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
               >
                 <X size={22} />
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-y-auto p-6">
-              {loadingCourses ? (
-                <p className="text-center">Đang tải...</p>
-              ) : programCourses.length === 0 ? (
-                <p className="text-center text-slate-500">
-                  Chưa có khóa đào tạo
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {programCourses.map((course, index) => (
-                    <div
-                      key={course.id}
-                      className="
-rounded-xl
-border
-border-slate-200
-p-4
-flex
-justify-between
-items-center
-"
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailLevel("PROGRAM");
+                    setDetailError("");
+                  }}
+                  className={`font-semibold ${detailLevel === "PROGRAM" ? "text-slate-900" : "text-green-700 hover:underline"}`}
+                >
+                  Nhiệm vụ đào tạo
+                </button>
+                {detailLevel !== "PROGRAM" && (
+                  <>
+                    <ChevronRight size={15} className="text-slate-400" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailLevel("COURSE");
+                        setDetailError("");
+                      }}
+                      className={`max-w-[420px] truncate font-semibold ${detailLevel === "COURSE" ? "text-slate-900" : "text-green-700 hover:underline"}`}
+                      title={selectedCourse?.course_name}
                     >
-                      <div>
-                        <p className="font-semibold text-slate-900">
-                          {index + 1}. {course.course_name}
-                        </p>
-                      </div>
+                      Nhiệm vụ khóa đào tạo
+                    </button>
+                  </>
+                )}
+                {detailLevel === "CLASS" && (
+                  <>
+                    <ChevronRight size={15} className="text-slate-400" />
+                    <span className="font-semibold text-slate-900">Khóa đào tạo</span>
+                  </>
+                )}
+              </div>
+            </div>
 
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">
-                          {course.total_classes || 0} lớp
-                        </p>
+            <div className="max-h-[68vh] overflow-y-auto p-6">
+              {detailLevel !== "PROGRAM" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailLevel(detailLevel === "CLASS" ? "COURSE" : "PROGRAM");
+                    setDetailError("");
+                  }}
+                  className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <ChevronLeft size={16} /> Quay lại
+                </button>
+              )}
 
-                        <p className="text-xs text-slate-500">Số lớp mở</p>
-                      </div>
+              {detailError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {detailError}
+                </div>
+              )}
+
+              {detailLevel === "PROGRAM" && (
+                loadingCourses ? (
+                  <div className="py-14 text-center text-slate-500">
+                    <Loader2 size={28} className="mx-auto animate-spin text-green-600" />
+                    <p className="mt-3 text-sm">Đang tải Nhiệm vụ khóa đào tạo...</p>
+                  </div>
+                ) : programCourses.length === 0 ? (
+                  <p className="rounded-xl bg-slate-50 py-12 text-center text-sm text-slate-500">
+                    Chưa có Nhiệm vụ khóa đào tạo thuộc nhiệm vụ này.
+                  </p>
+                ) : (
+                  <section className="overflow-hidden rounded-2xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <h3 className="font-bold text-slate-900">Nhiệm vụ khóa đào tạo thuộc nhiệm vụ đào tạo</h3>
+                      <p className="mt-1 text-xs text-slate-500">{programCourses.length} nhiệm vụ</p>
                     </div>
-                  ))}
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[980px] text-sm">
+                        <thead className="bg-white text-left text-xs uppercase tracking-wide text-slate-500">
+                          <tr className="border-b border-slate-200">
+                            <th className="px-4 py-3">Nhiệm vụ khóa đào tạo</th>
+                            <th className="px-4 py-3">Thời lượng</th>
+                            <th className="px-4 py-3 text-center">Đợt tổ chức</th>
+                            <th className="px-4 py-3 text-center">Học viên</th>
+                            <th className="px-4 py-3">Trạng thái</th>
+                            <th className="w-40 px-4 py-3 text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {programCourses.map((course) => (
+                            <tr key={course.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                              <td className="max-w-[440px] px-4 py-3 font-semibold text-slate-900">
+                                <p className="break-words">{course.course_name}</p>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{course.duration || "—"}</td>
+                              <td className="px-4 py-3 text-center font-semibold">{Number(course.total_classes) || 0}</td>
+                              <td className="px-4 py-3 text-center font-semibold">{Number(course.total_students) || 0}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(course.status)}`}>
+                                  {statusLabel(course.status)}
+                                </span>
+                              </td>
+                              <td className="w-40 px-4 py-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => openCourseDetail(course)}
+                                  title="Xem chi tiết"
+                                  aria-label={`Xem chi tiết ${course.course_name}`}
+                                  className="ml-auto inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50"
+                                >
+                                  <Eye size={17} />
+                                  Xem chi tiết
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )
+              )}
+
+              {detailLevel === "COURSE" && (
+                <div className="space-y-5">
+                  <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="break-words text-lg font-bold text-slate-900">{selectedCourse?.course_name}</h3>
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">
+                          {selectedCourse?.description || selectedCourse?.short_description || "Chưa có mô tả."}
+                        </p>
+                      </div>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(selectedCourse?.status)}`}>
+                        {statusLabel(selectedCourse?.status)}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <SummaryCard label="Tổng Khóa đào tạo" value={courseClasses.length} valueClass="text-blue-600" />
+                      <SummaryCard
+                        label="Tổng học viên"
+                        value={courseClasses.reduce((sum, item) => sum + (Number(item.current_students) || 0), 0)}
+                        valueClass="text-green-600"
+                      />
+                    </div>
+                  </section>
+
+                  {loadingDetail ? (
+                    <div className="py-12 text-center text-slate-500"><Loader2 size={28} className="mx-auto animate-spin text-green-600" /><p className="mt-3 text-sm">Đang tải Khóa đào tạo...</p></div>
+                  ) : courseClasses.length === 0 ? (
+                    <p className="rounded-xl bg-slate-50 py-10 text-center text-sm text-slate-500">Chưa có Khóa đào tạo trực thuộc.</p>
+                  ) : (
+                    <section className="overflow-hidden rounded-2xl border border-slate-200">
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 font-bold text-slate-900">Danh sách Khóa đào tạo</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[820px] text-sm">
+                          <thead className="text-left text-xs uppercase tracking-wide text-slate-500"><tr className="border-b border-slate-200"><th className="px-4 py-3">Tên</th><th className="px-4 py-3">Thời gian / Địa điểm</th><th className="px-4 py-3 text-center">Học viên</th><th className="px-4 py-3">Trạng thái</th><th className="w-40 px-4 py-3 text-right">Thao tác</th></tr></thead>
+                          <tbody>
+                            {courseClasses.map((courseClass) => (
+                              <tr key={courseClass.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                                <td className="max-w-[300px] px-4 py-3 font-semibold text-slate-900"><p className="break-words">{courseClass.class_name}</p></td>
+                                <td className="max-w-[300px] px-4 py-3 text-slate-600">
+                                  <p>{[formatDate(courseClass.organization_start_date), formatDate(courseClass.organization_end_date)].filter(Boolean).join(" – ") || courseClass.schedule_note || "Chưa có thời gian"}</p>
+                                  <p className="mt-1 text-xs text-slate-500">{courseClass.location || "Chưa có địa điểm"}</p>
+                                </td>
+                                <td className="px-4 py-3 text-center font-semibold">{Number(courseClass.current_students) || 0}</td>
+                                <td className="px-4 py-3"><span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">{classStatusLabel(courseClass.effective_status || courseClass.status)}</span></td>
+                                <td className="w-40 px-4 py-3 text-right"><button type="button" onClick={() => openClassDetail(courseClass)} title="Xem chi tiết" aria-label={`Xem chi tiết ${courseClass.class_name}`} className="ml-auto inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50"><Eye size={17} />Xem chi tiết</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                </div>
+              )}
+
+              {detailLevel === "CLASS" && (
+                <div className="space-y-5">
+                  <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="break-words text-lg font-bold text-slate-900">{selectedClass?.class_name}</h3>
+                        <p className="mt-2 text-sm text-slate-600">{[formatDate(selectedClass?.organization_start_date), formatDate(selectedClass?.organization_end_date)].filter(Boolean).join(" – ") || selectedClass?.schedule_note || "Chưa có thời gian"}</p>
+                        <p className="mt-1 text-sm text-slate-500">{selectedClass?.location || "Chưa có địa điểm"}</p>
+                      </div>
+                      <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{classStatusLabel(selectedClass?.effective_status || selectedClass?.status)}</span>
+                    </div>
+                  </section>
+
+                  {loadingDetail ? (
+                    <div className="py-12 text-center text-slate-500"><Loader2 size={28} className="mx-auto animate-spin text-green-600" /><p className="mt-3 text-sm">Đang tải chi tiết Khóa đào tạo...</p></div>
+                  ) : (
+                    <section className="overflow-hidden rounded-2xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3"><h3 className="font-bold text-slate-900">Danh sách học viên</h3><span className="text-sm font-semibold text-slate-600">{classStudentTotal} học viên</span></div>
+                      {classStudents.length === 0 ? (
+                        <p className="py-10 text-center text-sm text-slate-500">Khóa đào tạo chưa có học viên.</p>
+                      ) : (
+                        <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="text-left text-xs uppercase tracking-wide text-slate-500"><tr className="border-b border-slate-200"><th className="px-4 py-3">Họ và tên</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Điện thoại</th><th className="px-4 py-3">Trạng thái</th></tr></thead><tbody>{classStudents.map((student) => <tr key={student.id} className="border-b border-slate-100 last:border-0"><td className="px-4 py-3 font-semibold text-slate-900">{student.fullname || "—"}</td><td className="px-4 py-3 text-slate-600">{student.email || "—"}</td><td className="px-4 py-3 text-slate-600">{student.phone || "—"}</td><td className="px-4 py-3 text-slate-600">{student.register_status || "—"}</td></tr>)}</tbody></table></div>
+                      )}
+                      {classStudentTotal > classStudents.length && <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">Đang hiển thị {classStudents.length}/{classStudentTotal} học viên theo giới hạn API hiện tại.</p>}
+                    </section>
+                  )}
                 </div>
               )}
             </div>
@@ -510,11 +747,11 @@ items-center
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
                   {editingId
-                    ? "Cập nhật chương trình"
-                    : "Thêm chương trình mới"}
+                    ? "Cập nhật nhiệm vụ"
+                    : "Thêm nhiệm vụ mới"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Quản lý thông tin của nhóm chương trình đào tạo chính.
+                  Quản lý thông tin của nhóm nhiệm vụ đào tạo chính.
                 </p>
               </div>
               <button
@@ -531,11 +768,11 @@ items-center
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-5">
                   <FormInput
-                    label="Tên chương trình"
+                    label="Tên nhiệm vụ"
                     required
                     value={formData.program_name}
                     onChange={(value) => updateField("program_name", value)}
-                    placeholder="Nhập tên chương trình đào tạo..."
+                    placeholder="Nhập tên nhiệm vụ đào tạo..."
                   />
                   <FormTextArea
                     label="Mô tả"
@@ -572,7 +809,7 @@ items-center
                     ? "Đang lưu..."
                     : editingId
                       ? "Lưu thay đổi"
-                      : "Thêm chương trình"}
+                      : "Thêm nhiệm vụ"}
                 </button>
               </div>
             </form>

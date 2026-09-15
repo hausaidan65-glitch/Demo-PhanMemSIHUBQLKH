@@ -126,6 +126,17 @@ function formatDateTime(value) {
     minute: "2-digit",
   });
 }
+
+function parseImportedExhibitionDetails(value) {
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
 function getGenderLabel(value) {
   const labels = {
     MALE: "Nam",
@@ -1328,6 +1339,10 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
       return searchableText.includes(search);
     });
   }, [selectedEvent?.participants, participantListSearch]);
+  const importedExhibitionDetails = useMemo(
+    () => parseImportedExhibitionDetails(selectedParticipantDetail?.note),
+    [selectedParticipantDetail?.note],
+  );
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -2161,7 +2176,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {selectedEvent.event_type === "EXHIBITION"
-                    ? "Thông tin chi tiết và danh sách phản hồi khảo sát."
+                    ? "Thông tin chi tiết, người tham dự và phản hồi khảo sát."
                     : "Thông tin chi tiết và danh sách người tham dự."}
                 </p>
               </div>
@@ -2271,22 +2286,19 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                           value={selectedEvent.location}
                         />
                         <DetailItem
-                          label={
-                            selectedEvent.event_type === "EXHIBITION"
-                              ? "Phản hồi khảo sát"
-                              : "Người tham dự"
-                          }
-                          value={
-                            selectedEvent.event_type === "EXHIBITION"
-                              ? `${exhibitionSurveys.length} phản hồi`
-                              : `${Number(selectedEvent.total_participants || 0)}${
-                                  Number(selectedEvent.max_participants || 0) >
-                                  0
-                                    ? `/${selectedEvent.max_participants}`
-                                    : ""
-                                } người`
-                          }
+                          label="Người tham dự"
+                          value={`${selectedEvent.participants?.length || 0}${
+                            Number(selectedEvent.max_participants || 0) > 0
+                              ? `/${selectedEvent.max_participants}`
+                              : ""
+                          } người`}
                         />
+                        {selectedEvent.event_type === "EXHIBITION" && (
+                          <DetailItem
+                            label="Phản hồi khảo sát"
+                            value={`${exhibitionSurveys.length} phản hồi`}
+                          />
+                        )}
                       </div>
 
                       {selectedEvent.description && (
@@ -2544,7 +2556,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                     )}
                   </section>
                 )}
-                {selectedEvent.event_type !== "EXHIBITION" && (
+                {(
                   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -2557,14 +2569,16 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={openParticipantModal}
-                        className="flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
-                      >
-                        <UserPlus size={18} />
-                        Thêm người tham dự
-                      </button>
+                      {selectedEvent.event_type !== "EXHIBITION" && (
+                        <button
+                          type="button"
+                          onClick={openParticipantModal}
+                          className="flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
+                        >
+                          <UserPlus size={18} />
+                          Thêm người tham dự
+                        </button>
+                      )}
                       <div className="mt-5">
                         <div className="relative">
                           <Search
@@ -2645,6 +2659,7 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                                 <th className="px-4 py-3">Người tham dự</th>
                                 <th className="px-4 py-3">Liên hệ</th>
                                 <th className="px-4 py-3">Đơn vị</th>
+                                <th className="px-4 py-3">Chức vụ</th>
                                 <th className="px-4 py-3">Vai trò</th>
                                 <th className="px-4 py-3">Trạng thái</th>
                                 <th className="px-4 py-3 text-right">
@@ -2677,6 +2692,11 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                                       "—"}
                                   </td>
                                   <td className="px-4 py-4 text-slate-600">
+                                    {participant.position ||
+                                      participant.user_position ||
+                                      "—"}
+                                  </td>
+                                  <td className="px-4 py-4 text-slate-600">
                                     {participant.participant_role || "—"}
                                   </td>
                                   <td className="px-4 py-4">
@@ -2702,16 +2722,18 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                                         <Eye size={17} />
                                       </button>
 
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleDeleteParticipant(participant)
-                                        }
-                                        className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
-                                        title="Xóa người tham dự"
-                                      >
-                                        <Trash2 size={17} />
-                                      </button>
+                                      {selectedEvent.event_type !== "EXHIBITION" && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleDeleteParticipant(participant)
+                                          }
+                                          className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                                          title="Xóa người tham dự"
+                                        >
+                                          <Trash2 size={17} />
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -3052,6 +3074,30 @@ export default function StartupConnectionDay({ eventType = "EXHIBITION" }) {
                   />
                 </div>
               </section>
+
+              {selectedEvent?.event_type === "EXHIBITION" && importedExhibitionDetails && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="mb-5 text-lg font-bold text-slate-900">
+                    Dữ liệu khảo sát từ Google Form
+                  </h3>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailItem label="Tên sản phẩm trưng bày" value={importedExhibitionDetails.exhibition_product_name} emptyValue="Không có dữ liệu" />
+                    <DetailItem label="Số sản phẩm" value={importedExhibitionDetails.exhibition_product_quantity} />
+                    <DetailItem label="Số lượng đã bán/đặt hàng" value={importedExhibitionDetails.sold_or_ordered_quantity} />
+                    <DetailItem label="Khách ghé gian hàng" value={importedExhibitionDetails.visitor_count} />
+                    <DetailItem label="B2B matching" value={importedExhibitionDetails.b2b_matching_count} />
+                    <DetailItem label="Kết nối khu vực công" value={importedExhibitionDetails.public_sector_connection_count} />
+                    <DetailItem label="MOU" value={importedExhibitionDetails.mou_count} />
+                    <DetailItem label="Doanh thu" value={importedExhibitionDetails.exhibition_revenue} />
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    <LongDetailItem label="Ấn tượng chương trình" value={importedExhibitionDetails.highlight_impression} emptyValue="Không có dữ liệu" />
+                    <LongDetailItem label="Mong muốn tham gia tiếp" value={importedExhibitionDetails.want_to_join_again} emptyValue="Không có dữ liệu" />
+                    <LongDetailItem label="Góp ý Ban tổ chức" value={importedExhibitionDetails.organizer_feedback} emptyValue="Không có dữ liệu" />
+                    <LongDetailItem label="Chia sẻ khác" value={importedExhibitionDetails.other_sharing} emptyValue="Không có dữ liệu" />
+                  </div>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="mb-5 text-lg font-bold text-slate-900">
@@ -3444,19 +3490,19 @@ function FormSelect({
   );
 }
 
-function DetailItem({ label, value }) {
+function DetailItem({ label, value, emptyValue = "—" }) {
   return (
     <div className="rounded-xl bg-slate-50 p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
         {label}
       </p>
       <p className="mt-2 text-sm font-semibold text-slate-800">
-        {value === null || value === undefined || value === "" ? "—" : value}
+        {value === null || value === undefined || value === "" ? emptyValue : value}
       </p>
     </div>
   );
 }
-function LongDetailItem({ label, value }) {
+function LongDetailItem({ label, value, emptyValue = "—" }) {
   return (
     <div className="rounded-xl bg-slate-50 p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -3464,7 +3510,7 @@ function LongDetailItem({ label, value }) {
       </p>
 
       <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
-        {value === null || value === undefined || value === "" ? "—" : value}
+        {value === null || value === undefined || value === "" ? emptyValue : value}
       </p>
     </div>
   );

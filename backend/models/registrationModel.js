@@ -49,6 +49,24 @@ function buildRegistrationFilters(query = {}) {
   `;
 
   const params = [];
+
+  // Giới hạn lịch sử đăng ký theo đúng học viên được yêu cầu.
+  if (query.user_id !== undefined && query.user_id !== null && query.user_id !== "") {
+    const userId = Number(query.user_id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      const error = new Error("user_id phải là số nguyên dương.");
+      error.code = "INVALID_USER_ID";
+      throw error;
+    }
+
+    whereSql += `
+      AND r.user_id = ?
+    `;
+
+    params.push(userId);
+  }
+
   // ============================
   // NHIỆM VỤ LỚP HỌC
   // ============================
@@ -382,7 +400,9 @@ VALUES(
         data.class_id,
         data.commitment_file || null,
 
-        data.has_project ? 1 : 0,
+        data.preserve_has_project_unknown && data.has_project == null
+          ? null
+          : data.has_project ? 1 : 0,
         data.project_name || null,
         data.project_field || null,
         data.startup_stage || null,

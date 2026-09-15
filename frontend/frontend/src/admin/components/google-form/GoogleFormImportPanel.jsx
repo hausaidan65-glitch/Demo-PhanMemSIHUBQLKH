@@ -3,7 +3,7 @@ import GoogleFormFieldMapping from "./GoogleFormFieldMapping";
 import { cleanGoogleFormRows } from "./googleFormDataCleaner";
 import GoogleFormReviewStep from "./GoogleFormReviewStep";
 import GoogleFormDatabaseReview from "./GoogleFormDatabaseReview";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 
 import {
@@ -23,10 +23,10 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 // =====================================================
 
 const TEST_COMMIT_ONE_NEW = false;
-function GoogleFormImportPanel() {
+function GoogleFormImportPanel({ initialFile = null, onRemove = null, onFileState = null, batchDuplicateKeys = [], compact = false }) {
   const inputRef = useRef(null);
 
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(initialFile);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fieldMapping, setFieldMapping] = useState(null);
@@ -41,6 +41,8 @@ function GoogleFormImportPanel() {
   const [commitResult, setCommitResult] = useState(null);
   const [allowOverCapacity, setAllowOverCapacity] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [metadataDraft, setMetadataDraft] = useState(null);
+  const [sheetMetadataDrafts, setSheetMetadataDrafts] = useState({});
 
   // =====================================================
   // SHEET ĐANG CHỌN
@@ -49,6 +51,26 @@ function GoogleFormImportPanel() {
   const selectedSheet =
     preview?.sheets?.find((sheet) => sheet.sheetName === selectedSheetName) ||
     null;
+  const selectedSheetDataRows = selectedSheet?.dataRows;
+  const activeFieldMapping = fieldMapping?.mapping;
+  const mappingIdentity = JSON.stringify({
+    file: selectedFile
+      ? [selectedFile.name, selectedFile.size, selectedFile.lastModified]
+      : null,
+    sheet: selectedSheet?.sheetName || null,
+    headers: selectedSheet?.headers || [],
+    targetType: selectedTarget?.type || null,
+  });
+  const isExhibition = selectedTarget?.type === "EXHIBITION";
+  const isNetworking = selectedTarget?.type === "NETWORKING";
+  const metadataReady = isExhibition
+    ? Boolean(selectedTarget?.isComplete && selectedTarget?.eventId)
+    : isNetworking
+      ? Boolean(
+          metadataDraft?.networkingEventName
+          && Number.isInteger(Number(metadataDraft?.year)),
+        )
+      : Boolean(metadataDraft?.year);
 
   // =====================================================
   // CLEAN PREVIEW
@@ -56,27 +78,29 @@ function GoogleFormImportPanel() {
 
   const cleanedPreview = useMemo(() => {
     if (
-      !Array.isArray(selectedSheet?.dataRows) ||
-      !fieldMapping?.isComplete ||
+      !Array.isArray(selectedSheetDataRows) ||
+      !activeFieldMapping ||
+      fieldMapping.mappingIdentity !== mappingIdentity ||
+      (!fieldMapping.isComplete && selectedTarget?.type !== "EXHIBITION") ||
       !selectedTarget?.isComplete
     ) {
       return null;
     }
 
     return cleanGoogleFormRows({
-      dataRows: selectedSheet.dataRows,
-      mapping: fieldMapping.mapping,
+      dataRows: selectedSheetDataRows,
+      mapping: activeFieldMapping,
       target: selectedTarget,
+      batchDuplicateKeys,
     });
   }, [
-    selectedSheet?.dataRows,
-    fieldMapping?.mapping,
+    selectedSheetDataRows,
+    mappingIdentity,
+    activeFieldMapping,
+    fieldMapping?.mappingIdentity,
     fieldMapping?.isComplete,
-    selectedTarget?.type,
-    selectedTarget?.trainingCourseId,
-    selectedTarget?.courseId,
-    selectedTarget?.openingId,
-    selectedTarget?.isComplete,
+    selectedTarget,
+    batchDuplicateKeys,
   ]);
   // =====================================================
   // CAPACITY PREVIEW
@@ -194,6 +218,7 @@ function GoogleFormImportPanel() {
     if (inputRef.current) {
       inputRef.current.value = "";
     }
+    onRemove?.();
   };
 
   // =====================================================
@@ -239,6 +264,14 @@ function GoogleFormImportPanel() {
       }
 
       setPreview(data);
+      setSheetMetadataDrafts(Object.fromEntries(
+        (data.sheets || []).map((sheet) => [sheet.sheetName, sheet.metadata || null]),
+      ));
+      const firstSheet = data.sheets?.find((sheet) => sheet.hasDetectedHeader) || data.sheets?.[0];
+      if (compact && firstSheet) {
+        setSelectedSheetName(firstSheet.sheetName);
+        setMetadataDraft(firstSheet.metadata || null);
+      }
     } catch (error) {
       console.error("Preview Google Form lỗi:", error.response?.data || error);
 
@@ -251,8 +284,37 @@ function GoogleFormImportPanel() {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    if (initialFile && selectedFile === initialFile && !preview && !loading) {
+      handlePreview();
+    }
+    // Each card owns an immutable File object and previews it once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile]);
+
+  useEffect(() => {
+    const metadata = metadataDraft || selectedSheet?.metadata || preview?.sheets?.[0]?.metadata || null;
+    onFileState?.({
+      state: errorMessage
+        ? "ERROR"
+        : commitResult
+          ? "IMPORTED"
+          : metadata?.status || (loading ? "READING" : "PENDING"),
+      metadata,
+      ready: Boolean(cleanedPreview && selectedTarget?.isComplete && metadataReady),
+      duplicateKeys: cleanedPreview?.rows?.filter((row) => row.status === "READY" || row.status === "WARNING").map((row) => row.duplicateKey).filter(Boolean) || [],
+      updateMetadata: setMetadataDraft,
+    });
+  }, [cleanedPreview, commitResult, errorMessage, loading, metadataReady, onFileState, preview, selectedSheet, selectedTarget?.isComplete]);
   const handleValidateDatabase = async () => {
-    if (!cleanedPreview || !selectedTarget?.isComplete) {
+    if (selectedTarget?.type === "EXHIBITION"
+      && (!selectedTarget?.isComplete || !selectedTarget?.eventId)) {
+      setErrorMessage("Chưa chọn Triển lãm nhận dữ liệu.");
+
+      return;
+    }
+
+    if (!cleanedPreview || !selectedTarget?.isComplete || !metadataReady) {
       setErrorMessage("Dữ liệu chưa sẵn sàng để kiểm tra Database.");
 
       return;
@@ -280,7 +342,7 @@ function GoogleFormImportPanel() {
       const response = await axios.post(
         `${API_URL}/google-form-import/validate`,
         {
-          target: selectedTarget,
+          target: { ...selectedTarget, metadata: metadataDraft },
 
           rows: rowsToValidate,
         },
@@ -403,7 +465,7 @@ function GoogleFormImportPanel() {
       const response = await axios.post(
         `${API_URL}/google-form-import/commit`,
         {
-          target: selectedTarget,
+          target: { ...selectedTarget, metadata: metadataDraft },
 
           rows: rowsToCommit,
 
@@ -471,6 +533,7 @@ function GoogleFormImportPanel() {
 
       // Capacity confirmation cũ cũng hết hiệu lực.
       setAllowOverCapacity(false);
+    } catch (error) {
       console.error("Commit Google Form lỗi:", error.response?.data || error);
 
       setErrorMessage(
@@ -483,10 +546,10 @@ function GoogleFormImportPanel() {
     }
   };
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section className={compact ? "bg-white" : "rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"}>
       {/* HEADER */}
 
-      <div>
+      {!compact && <div>
         <p className="text-sm font-bold text-blue-600">IMPORT GOOGLE FORM</p>
 
         <h2 className="mt-1 text-xl font-bold text-slate-900">
@@ -497,11 +560,11 @@ function GoogleFormImportPanel() {
           Upload file Excel được xuất trực tiếp từ Google Form. Hệ thống sẽ đọc
           các sheet nhưng chưa import dữ liệu cho đến khi Admin xác nhận.
         </p>
-      </div>
+      </div>}
 
       {/* UPLOAD */}
 
-      {!selectedFile && (
+      {!initialFile && !selectedFile && (
         <label className="mt-6 flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-blue-400 hover:bg-blue-50/40">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
             <Upload size={30} />
@@ -529,7 +592,7 @@ function GoogleFormImportPanel() {
 
       {/* FILE ĐÃ CHỌN */}
 
-      {selectedFile && (
+      {!compact && selectedFile && (
         <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -590,7 +653,7 @@ function GoogleFormImportPanel() {
 
       {preview && (
         <div className="mt-6 space-y-5">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className={compact ? "rounded-xl border border-emerald-200 bg-emerald-50 p-3" : "rounded-2xl border border-emerald-200 bg-emerald-50 p-4"}>
             <div className="flex items-center gap-2 font-bold text-emerald-700">
               <CheckCircle2 size={18} />
               Đã đọc file thành công
@@ -614,7 +677,14 @@ function GoogleFormImportPanel() {
                     key={sheet.sheetName}
                     type="button"
                     onClick={() => {
+                      if (selectedSheetName) {
+                        setSheetMetadataDrafts((current) => ({
+                          ...current,
+                          [selectedSheetName]: metadataDraft,
+                        }));
+                      }
                       setSelectedSheetName(sheet.sheetName);
+                      setMetadataDraft(sheetMetadataDrafts[sheet.sheetName] ?? sheet.metadata ?? null);
 
                       setSelectedTarget(null);
                       setFieldMapping(null);
@@ -642,6 +712,10 @@ function GoogleFormImportPanel() {
                     <p className="mt-2 text-sm text-slate-500">
                       {sheet.totalRows || 0} dòng dữ liệu
                     </p>
+
+                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${sheet.status === "EMPTY" ? "bg-slate-100 text-slate-600" : sheet.status === "ERROR" ? "bg-red-100 text-red-700" : sheet.status === "READY" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {sheet.status || (sheet.hasDetectedHeader ? "READY" : "NEEDS_ADMIN_CONFIRMATION")}
+                    </span>
 
                     {sheet.hasDetectedHeader ? (
                       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -874,10 +948,50 @@ function GoogleFormImportPanel() {
                   </>
                 )}
                 {selectedSheet?.hasDetectedHeader && (
-                  <GoogleFormTargetSelector
-                    selectedSheet={selectedSheet}
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-bold text-slate-900">Metadata trong nội dung Excel</h3>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${metadataReady ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{metadataReady ? "Sẵn sàng" : "Cần Admin xác nhận"}</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {isExhibition ? (
+                        <label className="text-xs font-semibold text-slate-600">Tên triển lãm *<input value={metadataDraft?.exhibitionName || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), exhibitionName: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                      ) : isNetworking ? (
+                        <label className="text-xs font-semibold text-slate-600">Tên sự kiện *<input value={metadataDraft?.networkingEventName || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), networkingEventName: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                      ) : (
+                        <>
+                          <label className="text-xs font-semibold text-slate-600">Nhiệm vụ đào tạo<input value={metadataDraft?.trainingProgramName || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), trainingProgramName: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                          <label className="text-xs font-semibold text-slate-600">Nhiệm vụ khóa đào tạo<input value={metadataDraft?.courseName || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), courseName: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                          <label className="text-xs font-semibold text-slate-600">Khóa đào tạo<input value={metadataDraft?.openingName || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), openingName: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                        </>
+                      )}
+                      <label className="text-xs font-semibold text-slate-600">Năm *<input type="number" min="2000" max="2100" value={metadataDraft?.year || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), year: e.target.value ? Number(e.target.value) : null }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>
+                      {(isExhibition || isNetworking) && <label className="text-xs font-semibold text-slate-600">Địa điểm{isExhibition ? " *" : " (nếu có)"}<input value={metadataDraft?.location || ""} onChange={(e) => setMetadataDraft((v) => ({ ...(v || {}), location: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" /></label>}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {(metadataDraft?.sessions?.length ? metadataDraft.sessions : [{ sessionDate: "", startTime: "", endTime: "" }]).map((session, index) => (
+                        <div key={index} className="grid gap-2 sm:grid-cols-3">
+                          <input aria-label={`Ngày buổi ${index + 1}`} type="date" value={session.sessionDate || ""} onChange={(e) => setMetadataDraft((v) => { const sessions = [...(v?.sessions?.length ? v.sessions : [{ sessionDate: "", startTime: "", endTime: "" }])]; sessions[index] = { ...sessions[index], sessionDate: e.target.value }; return { ...(v || {}), sessions }; })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
+                          <input aria-label={`Giờ bắt đầu buổi ${index + 1}`} type="time" value={session.startTime || ""} onChange={(e) => setMetadataDraft((v) => { const sessions = [...v.sessions]; sessions[index] = { ...sessions[index], startTime: e.target.value }; return { ...v, sessions }; })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
+                          <input aria-label={`Giờ kết thúc buổi ${index + 1}`} type="time" value={session.endTime || ""} onChange={(e) => setMetadataDraft((v) => { const sessions = [...v.sessions]; sessions[index] = { ...sessions[index], endTime: e.target.value }; return { ...v, sessions }; })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">{isExhibition || isNetworking ? "Số người tham gia" : "Số học viên"}: <strong>{metadataDraft?.studentCount || selectedSheet.totalRows || 0}</strong>. Metadata chỉ được lấy từ nội dung Excel; ngày, giờ và địa điểm để trống khi file không cung cấp.</p>
+                  </div>
+                )}
+                {selectedSheet?.hasDetectedHeader && (
+                    <GoogleFormTargetSelector
+                      selectedSheet={selectedSheet}
+                      metadata={metadataDraft}
+                      onMetadataChange={setMetadataDraft}
                     onTargetChange={handleTargetChange}
                   />
+                )}
+                {selectedTarget?.type === "EXHIBITION" && !selectedTarget?.isComplete && (
+                  <p className="mt-3 text-sm font-semibold text-amber-700">
+                    Chưa chọn Triển lãm nhận dữ liệu.
+                  </p>
                 )}
                 {/* =====================================================
     MAPPING
@@ -885,11 +999,16 @@ function GoogleFormImportPanel() {
 
                 {selectedSheet?.hasDetectedHeader &&
                   selectedTarget?.isComplete && (
-                    <GoogleFormFieldMapping
-                      selectedSheet={selectedSheet}
-                      target={selectedTarget}
-                      onMappingChange={handleMappingChange}
-                    />
+                    <details className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                      <summary className="cursor-pointer font-bold text-slate-700">Chi tiết mapping cột</summary>
+                      <GoogleFormFieldMapping
+                        key={mappingIdentity}
+                        selectedSheet={selectedSheet}
+                        target={selectedTarget}
+                        mappingIdentity={mappingIdentity}
+                        onMappingChange={handleMappingChange}
+                      />
+                    </details>
                   )}
                 {/* =====================================================
     CLEANED PREVIEW SUMMARY
@@ -998,7 +1117,9 @@ function GoogleFormImportPanel() {
 ===================================================== */}
 
                 {cleanedPreview && (
-                  <GoogleFormReviewStep cleanedPreview={cleanedPreview} />
+                  <GoogleFormReviewStep
+                    cleanedPreview={cleanedPreview}
+                  />
                 )}
                 {cleanedPreview && (
                   <div className="mt-5 flex justify-end">

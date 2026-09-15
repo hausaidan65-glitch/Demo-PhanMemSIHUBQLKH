@@ -1,5 +1,28 @@
 const db = require("../config/db");
 
+function withCanonicalMission(row) {
+  const {
+    canonical_mission_name,
+    canonical_mission_source,
+    canonical_mission_status,
+    ...event
+  } = row;
+
+  event.mission_id = event.mission_id === null
+    ? null
+    : Number(event.mission_id);
+  event.canonical_mission = event.mission_id === null
+    ? null
+    : {
+        id: event.mission_id,
+        mission_name: canonical_mission_name,
+        mission_source: canonical_mission_source,
+        status: canonical_mission_status,
+      };
+
+  return event;
+}
+
 class StartupConnectionModel {
   // =========================================================
   // DANH SÁCH SỰ KIỆN STARTUP CONNECTION DAY
@@ -124,6 +147,7 @@ class StartupConnectionModel {
         e.short_description,
         e.description,
         e.mission,
+        e.mission_id,
         e.thumbnail,
         e.location,
         e.start_datetime,
@@ -137,6 +161,9 @@ class StartupConnectionModel {
         e.updated_at,
 
         parent.event_name AS parent_event_name,
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
         (
           SELECT COUNT(*)
@@ -149,6 +176,9 @@ class StartupConnectionModel {
       LEFT JOIN startup_connection_events parent
         ON parent.id = e.parent_event_id
 
+      LEFT JOIN missions m
+        ON m.id = e.mission_id
+
       ${whereSql}
 
       ORDER BY
@@ -158,8 +188,11 @@ class StartupConnectionModel {
       params,
     );
 
-    return rows.map((item) => ({
-      ...item,
+    return rows.map((row) => {
+      const item = withCanonicalMission(row);
+
+      return {
+        ...item,
 
       id: Number(item.id) || null,
 
@@ -172,8 +205,9 @@ class StartupConnectionModel {
 
       current_participants: Number(item.current_participants) || 0,
 
-      total_participants: Number(item.total_participants) || 0,
-    }));
+        total_participants: Number(item.total_participants) || 0,
+      };
+    });
   }
   // =========================================================
   // XUẤT DỮ LIỆU THEO BỘ LỌC
@@ -200,6 +234,7 @@ class StartupConnectionModel {
         e.short_description,
         e.description,
         e.mission,
+        e.mission_id,
         e.thumbnail,
         e.location,
         e.start_datetime,
@@ -213,6 +248,9 @@ class StartupConnectionModel {
         e.updated_at,
 
         parent.event_name AS parent_event_name,
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
         (
           SELECT COUNT(*)
@@ -225,6 +263,9 @@ class StartupConnectionModel {
       LEFT JOIN startup_connection_events parent
         ON parent.id = e.parent_event_id
 
+      LEFT JOIN missions m
+        ON m.id = e.mission_id
+
       WHERE e.id = ?
 
       LIMIT 1
@@ -236,7 +277,7 @@ class StartupConnectionModel {
       return null;
     }
 
-    const item = rows[0];
+    const item = withCanonicalMission(rows[0]);
 
     return {
       ...item,
@@ -325,6 +366,7 @@ class StartupConnectionModel {
         short_description,
         description,
         mission,
+        mission_id,
         thumbnail,
         location,
         start_datetime,
@@ -336,7 +378,7 @@ class StartupConnectionModel {
         status
       )
 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         data.event_name,
@@ -352,6 +394,8 @@ class StartupConnectionModel {
         data.description || null,
 
         data.mission || null,
+
+        data.mission_id ?? null,
 
         data.thumbnail || null,
 
@@ -391,7 +435,8 @@ class StartupConnectionModel {
         event_code = ?,
         short_description = ?,
         description = ?,
-        mission = ?,
+        mission = IF(?, ?, mission),
+        mission_id = IF(?, ?, mission_id),
         thumbnail = ?,
         location = ?,
         start_datetime = ?,
@@ -416,7 +461,13 @@ class StartupConnectionModel {
 
         data.description || null,
 
-        data.mission || null,
+        data.mission_provided ? 1 : 0,
+
+        data.mission,
+
+        data.mission_id_provided ? 1 : 0,
+
+        data.mission_id,
 
         data.thumbnail || null,
 

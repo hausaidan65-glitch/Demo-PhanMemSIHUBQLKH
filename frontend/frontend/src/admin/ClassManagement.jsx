@@ -3,8 +3,10 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import CourseClassProgressModal from "./training/progress/CourseClassProgressModal";
 import OrganizationDateTimeFields from "./components/OrganizationDateTimeFields";
+import OpeningStudentImportModal from "./components/OpeningStudentImportModal";
 import {
   ChevronDown,
+  Copy,
   Eye,
   Loader2,
   ScanLine,
@@ -18,8 +20,18 @@ import {
   FileSpreadsheet,
   X,
 } from "lucide-react";
+import { PUBLIC_APP_URL } from "../config/api";
 
 const API_URL = "http://localhost:5000/api";
+const PUBLIC_REGISTRATION_BASE_URL = PUBLIC_APP_URL.replace(/\/$/, "");
+const MISSION_SOURCE_LABELS = {
+  A: "Nhiệm vụ của Sở Khoa học và Công nghệ",
+  B: "Nhiệm vụ của Bộ/Sở ban ngành khác / dịch vụ phối hợp với đối tác",
+};
+
+function getOpeningRegistrationUrl(openingId) {
+  return `${PUBLIC_REGISTRATION_BASE_URL}/register/${openingId}`;
+}
 const EMPTY_OPENING_FORM = {
   class_code: "",
   class_name: "",
@@ -316,6 +328,8 @@ function ClassManagement() {
   const [progressOpening, setProgressOpening] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedOpening, setSelectedOpening] = useState(null);
+  const [importOpening, setImportOpening] = useState(null);
+  const [copiedOpeningId, setCopiedOpeningId] = useState(null);
   const [openingStudents, setOpeningStudents] = useState([]);
   const [openingSessions, setOpeningSessions] = useState([
     { ...EMPTY_SESSION_FORM },
@@ -381,13 +395,13 @@ function ClassManagement() {
       setTrainingCourses(response.data.data || []);
     } catch (error) {
       console.error(
-        "Lỗi tải danh sách khóa đào tạo:",
+        "Lỗi tải danh sách nhiệm vụ đào tạo:",
         error.response?.data || error,
       );
 
       alert(
         error.response?.data?.message ||
-          "Không thể tải danh sách khóa đào tạo.",
+          "Không thể tải danh sách nhiệm vụ đào tạo.",
       );
     } finally {
       setTrainingCourseLoading(false);
@@ -431,12 +445,12 @@ function ClassManagement() {
       );
     } catch (error) {
       console.error(
-        "Lỗi tải danh sách lớp học:",
+        "Lỗi tải danh sách khóa đào tạo:",
         error.response?.data || error,
       );
 
       alert(
-        error.response?.data?.message || "Không thể tải danh sách lớp học.",
+        error.response?.data?.message || "Không thể tải danh sách khóa đào tạo.",
       );
     } finally {
       setLoading(false);
@@ -748,9 +762,9 @@ function ClassManagement() {
 
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Lỗi xuất Excel lớp học:", error);
+      console.error("Lỗi xuất Excel khóa đào tạo:", error);
 
-      alert("Không thể xuất danh sách lớp học.");
+      alert("Không thể xuất danh sách khóa đào tạo.");
     } finally {
       setExporting(false);
     }
@@ -784,6 +798,23 @@ function ClassManagement() {
           : null,
       },
     });
+  };
+  const handleCopyRegistrationLink = async (openingId) => {
+    const registrationUrl = getOpeningRegistrationUrl(openingId);
+
+    try {
+      await navigator.clipboard.writeText(registrationUrl);
+      setCopiedOpeningId(openingId);
+
+      window.setTimeout(() => {
+        setCopiedOpeningId((currentId) =>
+          currentId === openingId ? null : currentId,
+        );
+      }, 2000);
+    } catch (error) {
+      console.error("Không thể sao chép link đăng ký:", error);
+      alert("Không thể sao chép link đăng ký. Vui lòng thử lại.");
+    }
   };
   const handleViewOpeningStudents = async (opening) => {
     try {
@@ -876,14 +907,21 @@ function ClassManagement() {
 
       setSelectedClass(response.data.data || item);
     } catch (error) {
-      console.error("Lỗi tải chi tiết lớp học:", error.response?.data || error);
+      console.error("Lỗi tải chi tiết khóa đào tạo:", error.response?.data || error);
 
       setSelectedClass(null);
 
-      alert(error.response?.data?.message || "Không thể tải chi tiết lớp học.");
+      alert(error.response?.data?.message || "Không thể tải chi tiết khóa đào tạo.");
     } finally {
       setDetailLoading(false);
     }
+  };
+  const refreshSelectedClassAfterImport = async () => {
+    if (!selectedClass?.id) return;
+
+    const response = await axios.get(`${API_URL}/classes/${selectedClass.id}`);
+    setSelectedClass(response.data.data || selectedClass);
+    await fetchClasses();
   };
   const handleResetFilters = () => {
     setKeyword("");
@@ -930,7 +968,7 @@ function ClassManagement() {
     } catch (error) {
       console.error("Lỗi tải dữ liệu sửa lớp:", error.response?.data || error);
 
-      alert(error.response?.data?.message || "Không thể tải dữ liệu lớp học.");
+      alert(error.response?.data?.message || "Không thể tải dữ liệu khóa đào tạo.");
     } finally {
       setEditLoading(false);
     }
@@ -949,15 +987,15 @@ function ClassManagement() {
 
   const validateForm = () => {
     if (!formData.training_course_id) {
-      return "Vui lòng chọn khóa đào tạo.";
+      return "Vui lòng chọn nhiệm vụ đào tạo.";
     }
 
     if (!formData.class_name.trim()) {
-      return "Vui lòng nhập tên lớp học.";
+      return "Vui lòng nhập tên khóa đào tạo.";
     }
 
     if (formData.class_name.trim().length > 255) {
-      return "Tên lớp học không được vượt quá 255 ký tự.";
+      return "Tên khóa đào tạo không được vượt quá 255 ký tự.";
     }
 
     return null;
@@ -998,7 +1036,6 @@ function ClassManagement() {
       payload.append("target_audience", formData.target_audience.trim());
 
       payload.append("learning_outcomes", formData.learning_outcomes.trim());
-      payload.append("mission", formData.mission.trim());
 
       payload.append("status", formData.status);
 
@@ -1038,17 +1075,17 @@ function ClassManagement() {
       alert(
         response.data.message ||
           (editingClassId
-            ? "Cập nhật lớp học thành công."
-            : "Thêm lớp học thành công."),
+            ? "Cập nhật khóa đào tạo thành công."
+            : "Thêm khóa đào tạo thành công."),
       );
 
       closeCreateModal();
 
       await fetchClasses();
     } catch (error) {
-      console.error("Lỗi lưu lớp học:", error.response?.data || error);
+      console.error("Lỗi lưu khóa đào tạo:", error.response?.data || error);
 
-      alert(error.response?.data?.message || "Không thể lưu lớp học.");
+      alert(error.response?.data?.message || "Không thể lưu khóa đào tạo.");
     } finally {
       setSaving(false);
     }
@@ -1072,7 +1109,7 @@ function ClassManagement() {
     }
 
     if (!selectedClass?.id) {
-      alert("Không xác định được lớp học.");
+      alert("Không xác định được khóa đào tạo.");
       return;
     }
 
@@ -1274,8 +1311,8 @@ function ClassManagement() {
   };
   const handleDeleteClass = async (item) => {
     const accepted = window.confirm(
-      `Xóa lớp "${item.class_name}"?\n\n` +
-        "Lớp đã có học viên đăng ký sẽ không thể xóa.",
+      `Xóa khóa đào tạo "${item.class_name}"?\n\n` +
+        "Khóa đào tạo đã có học viên đăng ký sẽ không thể xóa.",
     );
 
     if (!accepted) {
@@ -1288,11 +1325,11 @@ function ClassManagement() {
         authConfig,
       );
 
-      alert(response.data.message || "Đã xóa lớp học.");
+      alert(response.data.message || "Đã xóa khóa đào tạo.");
 
       await fetchClasses();
     } catch (error) {
-      alert(error.response?.data?.message || "Không thể xóa lớp học.");
+      alert(error.response?.data?.message || "Không thể xóa khóa đào tạo.");
     }
   };
 
@@ -1302,10 +1339,10 @@ function ClassManagement() {
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Quản lý lớp học</h1>
+          <h1 className="text-xl font-bold text-slate-900">Quản lý khóa đào tạo</h1>
 
           <p className="mt-1 text-sm text-slate-500">
-            Quản lý lớp học theo từng khóa đào tạo và các đợt tổ chức.
+            Quản lý khóa đào tạo theo từng nhiệm vụ đào tạo và các đợt tổ chức.
           </p>
         </div>
 
@@ -1383,7 +1420,7 @@ function ClassManagement() {
             "
           >
             <Plus size={18} />
-            Thêm lớp học
+            Thêm khóa đào tạo
           </button>
         </div>
       </div>
@@ -1391,7 +1428,7 @@ function ClassManagement() {
       {/* SUMMARY */}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Tổng lớp học" value={classes.length} />
+        <SummaryCard label="Tổng khóa đào tạo" value={classes.length} />
 
         <SummaryCard
           label="Đang mở"
@@ -1434,7 +1471,7 @@ function ClassManagement() {
                 setKeyword(event.target.value);
                 setPage(1);
               }}
-              placeholder="Tìm tên lớp học..."
+              placeholder="Tìm tên khóa đào tạo..."
               className="w-full bg-transparent px-3 py-3 text-sm outline-none"
             />
           </div>
@@ -1449,7 +1486,7 @@ function ClassManagement() {
             <Search size={18} />
             Tìm kiếm
           </button>
-          {/* Khóa đào tạo */}
+          {/* Nhiệm vụ đào tạo */}
 
           <select
             value={trainingCourseFilter}
@@ -1459,7 +1496,7 @@ function ClassManagement() {
             }}
             className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
           >
-            <option value="">Tất cả khóa đào tạo</option>
+            <option value="">Tất cả nhiệm vụ đào tạo</option>
 
             {trainingCourses.map((trainingCourse) => (
               <option key={trainingCourse.id} value={trainingCourse.id}>
@@ -1566,9 +1603,9 @@ function ClassManagement() {
           <table className="w-full min-w-[1180px] table-fixed">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                <th className="w-[32%] px-4 py-3">Lớp học</th>
+                <th className="w-[32%] px-4 py-3">Khóa đào tạo</th>
 
-                <th className="w-[31%] px-4 py-3">Khóa đào tạo</th>
+                <th className="w-[31%] px-4 py-3">Nhiệm vụ đào tạo</th>
 
                 <th className="w-[10%] px-3 py-3">Đợt tổ chức</th>
 
@@ -1590,7 +1627,7 @@ function ClassManagement() {
                     />
 
                     <p className="mt-3 text-sm text-slate-500">
-                      Đang tải danh sách lớp học...
+                      Đang tải danh sách khóa đào tạo...
                     </p>
                   </td>
                 </tr>
@@ -1600,7 +1637,7 @@ function ClassManagement() {
                     colSpan={9}
                     className="px-5 py-16 text-center text-slate-500"
                   >
-                    Chưa có lớp học phù hợp.
+                    Chưa có khóa đào tạo phù hợp.
                   </td>
                 </tr>
               ) : (
@@ -1617,7 +1654,7 @@ function ClassManagement() {
                           {item.thumbnail ? (
                             <img
                               src={`http://localhost:5000${item.thumbnail}`}
-                              alt={item.class_name || "Lớp học"}
+                              alt={item.class_name || "Khóa đào tạo"}
                               className="h-full w-full object-cover"
                             />
                           ) : (
@@ -1705,7 +1742,7 @@ function ClassManagement() {
                           type="button"
                           onClick={() => openEditModal(item)}
                           className="rounded-lg border border-amber-200 p-2 text-amber-600 hover:bg-amber-50"
-                          title="Sửa lớp"
+                          title="Sửa khóa đào tạo"
                         >
                           <Pencil size={17} />
                         </button>
@@ -1714,7 +1751,7 @@ function ClassManagement() {
                           type="button"
                           onClick={() => handleDeleteClass(item)}
                           className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
-                          title="Xóa lớp"
+                          title="Xóa khóa đào tạo"
                         >
                           <Trash2 size={17} />
                         </button>
@@ -1745,7 +1782,7 @@ function ClassManagement() {
             <b>
               {startItem}-{endItem}
             </b>{" "}
-            trên <b>{filteredClasses.length}</b> lớp
+            trên <b>{filteredClasses.length}</b> khóa đào tạo
           </p>
 
           <div className="flex items-center gap-3">
@@ -1812,13 +1849,13 @@ function ClassManagement() {
             <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  {editingClassId ? "Cập nhật lớp học" : "Thêm lớp học"}
+                  {editingClassId ? "Cập nhật khóa đào tạo" : "Thêm khóa đào tạo"}
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
                   {editingClassId
-                    ? "Chỉnh sửa thông tin chung của lớp học."
-                    : "Tạo lớp học mới thuộc một khóa đào tạo."}
+                    ? "Chỉnh sửa thông tin chung của khóa đào tạo."
+                    : "Tạo khóa đào tạo mới thuộc một nhiệm vụ đào tạo."}
                 </p>
               </div>
 
@@ -1838,13 +1875,13 @@ function ClassManagement() {
               {/* KHÓA ĐÀO TẠO */}
 
               <FormSelect
-                label="Khóa đào tạo"
+                label="Nhiệm vụ đào tạo"
                 required
                 value={formData.training_course_id}
                 onChange={(value) => updateField("training_course_id", value)}
                 disabled={trainingCourseLoading}
               >
-                <option value="">Chọn khóa đào tạo</option>
+                <option value="">Chọn nhiệm vụ đào tạo</option>
 
                 {trainingCourses
                   .filter((item) => item.status !== "INACTIVE")
@@ -1858,7 +1895,7 @@ function ClassManagement() {
               {/* TÊN */}
 
               <FormInput
-                label="Tên lớp học"
+                label="Tên khóa đào tạo"
                 required
                 value={formData.class_name}
                 onChange={(value) => updateField("class_name", value)}
@@ -1869,7 +1906,7 @@ function ClassManagement() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Ảnh lớp học
+                  Ảnh khóa đào tạo
                 </label>
 
                 <input
@@ -1894,7 +1931,7 @@ function ClassManagement() {
                 label="Mô tả ngắn"
                 value={formData.short_description}
                 onChange={(value) => updateField("short_description", value)}
-                placeholder="Mô tả ngắn về lớp học..."
+                placeholder="Mô tả ngắn về khóa đào tạo..."
               />
 
               {/* DESCRIPTION */}
@@ -1903,7 +1940,7 @@ function ClassManagement() {
                 label="Mô tả chi tiết"
                 value={formData.description}
                 onChange={(value) => updateField("description", value)}
-                placeholder="Thông tin chi tiết về nội dung lớp học..."
+                placeholder="Thông tin chi tiết về nội dung khóa đào tạo..."
               />
 
               <div className="grid gap-5 md:grid-cols-2">
@@ -1945,12 +1982,19 @@ function ClassManagement() {
                 onChange={(value) => updateField("learning_outcomes", value)}
                 placeholder="Học viên đạt được gì sau khi hoàn thành lớp..."
               />
-              <FormTextarea
-                label="Nhiệm vụ"
-                value={formData.mission}
-                onChange={(value) => updateField("mission", value)}
-                placeholder="VD: Nâng cao năng lực marketing, hỗ trợ doanh nghiệp tiếp cận khách hàng và phát triển thị trường..."
-              />
+              {editingClassId && formData.mission && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Nhiệm vụ cũ
+                  </p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-slate-700">
+                    {formData.mission}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Dữ liệu cũ chỉ đọc và không thay đổi khi chọn nhiệm vụ mới.
+                  </p>
+                </div>
+              )}
               {/* ACTION */}
 
               <div className="sticky bottom-0 flex justify-end gap-3 border-t border-slate-200 bg-white pt-4">
@@ -1980,7 +2024,7 @@ function ClassManagement() {
                     ? "Đang lưu..."
                     : editingClassId
                       ? "Lưu thay đổi"
-                      : "Thêm lớp học"}
+                      : "Thêm khóa đào tạo"}
                 </button>
               </div>
             </form>
@@ -1998,11 +2042,11 @@ function ClassManagement() {
             <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Chi tiết lớp học
+                  Chi tiết khóa đào tạo
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Thông tin lớp học và các đợt tổ chức.
+                  Thông tin khóa đào tạo và các đợt tổ chức.
                 </p>
               </div>
 
@@ -2023,7 +2067,7 @@ function ClassManagement() {
                 />
 
                 <p className="mt-3 text-sm text-slate-500">
-                  Đang tải chi tiết lớp học...
+                  Đang tải chi tiết khóa đào tạo...
                 </p>
               </div>
             ) : (
@@ -2043,7 +2087,7 @@ function ClassManagement() {
                         />
                       ) : (
                         <div className="flex h-full min-h-[240px] items-center justify-center text-sm text-slate-400">
-                          Chưa có ảnh lớp học
+                          Chưa có ảnh khóa đào tạo
                         </div>
                       )}
                     </div>
@@ -2078,7 +2122,7 @@ function ClassManagement() {
 
                       <div className="mt-6 grid gap-4 sm:grid-cols-2">
                         <DetailItem
-                          label="Khóa đào tạo"
+                          label="Nhiệm vụ đào tạo"
                           value={selectedClass.training_course_name}
                         />
 
@@ -2123,10 +2167,33 @@ function ClassManagement() {
                           </p>
                         </div>
                       )}
+                      {selectedClass.canonical_mission && (
+                        <div className="mt-4 rounded-xl border border-green-100 bg-green-50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                            Nhiệm vụ
+                          </p>
+
+                          <p className="mt-2 text-sm font-semibold text-slate-800">
+                            {selectedClass.canonical_mission.mission_name}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {selectedClass.canonical_mission.mission_source} —{" "}
+                            {MISSION_SOURCE_LABELS[
+                              selectedClass.canonical_mission.mission_source
+                            ] || selectedClass.canonical_mission.mission_source}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Trạng thái:{" "}
+                            {selectedClass.canonical_mission.status === "ACTIVE"
+                              ? "Đang hoạt động"
+                              : "Ngừng hoạt động"}
+                          </p>
+                        </div>
+                      )}
                       {selectedClass.mission && (
                         <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-                            Nhiệm vụ
+                            Nhiệm vụ cũ
                           </p>
 
                           <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
@@ -2149,7 +2216,7 @@ function ClassManagement() {
 
                       <p className="mt-1 text-sm text-slate-500">
                         {selectedClass.class_openings?.length || 0} đợt tổ chức
-                        của lớp học.
+                        của khóa đào tạo.
                       </p>
                     </div>
 
@@ -2170,7 +2237,7 @@ function ClassManagement() {
                       </p>
 
                       <p className="mt-1 text-sm text-slate-500">
-                        Lớp học đã được tạo nhưng chưa có đợt mở lớp.
+                        Khóa đào tạo đã được tạo nhưng chưa có đợt tổ chức.
                       </p>
                     </div>
                   ) : (
@@ -2252,9 +2319,50 @@ function ClassManagement() {
                                   <b>Lịch:</b> {opening.schedule_note}
                                 </div>
                               )}
+
+                              {opening.first_session_date && (
+                                <div className="mt-4">
+                                  <label
+                                    htmlFor={`registration-link-${opening.id}`}
+                                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+                                  >
+                                    Link đăng ký
+                                  </label>
+
+                                  <div className="flex max-w-2xl gap-2">
+                                    <input
+                                      id={`registration-link-${opening.id}`}
+                                      type="text"
+                                      readOnly
+                                      value={getOpeningRegistrationUrl(opening.id)}
+                                      className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none"
+                                    />
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleCopyRegistrationLink(opening.id)
+                                      }
+                                      className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-blue-200 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                                    >
+                                      <Copy size={16} />
+                                      {copiedOpeningId === opening.id
+                                        ? "Đã copy"
+                                        : "Copy"}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex w-full shrink-0 flex-wrap items-center justify-center gap-2 sm:w-auto sm:min-w-[340px] xl:flex-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => setImportOpening(opening)}
+                                className="inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-green-200 px-3 text-sm font-semibold text-green-700 hover:bg-green-50"
+                              >
+                                Import học viên
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => setProgressOpening(opening)}
@@ -2606,7 +2714,7 @@ function ClassManagement() {
                         </h3>
 
                         <p className="mt-1 text-sm text-slate-500">
-                          Toàn bộ khóa, lớp và đợt học viên đã đăng ký.
+                          Toàn bộ nhiệm vụ đào tạo, khóa đào tạo và đợt học viên đã đăng ký.
                         </p>
                       </div>
 
@@ -2620,9 +2728,9 @@ function ClassManagement() {
                         <table className="w-full min-w-[1000px]">
                           <thead className="bg-slate-50">
                             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              <th className="px-5 py-4">Khóa đào tạo</th>
+                              <th className="px-5 py-4">Nhiệm vụ đào tạo</th>
 
-                              <th className="px-5 py-4">Lớp học</th>
+                              <th className="px-5 py-4">Khóa đào tạo</th>
 
                               <th className="px-5 py-4">Đợt tổ chức</th>
 
@@ -2741,7 +2849,7 @@ function ClassManagement() {
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Lớp: {selectedClass.class_name}
+                  Khóa đào tạo: {selectedClass.class_name}
                 </p>
               </div>
 
@@ -2786,7 +2894,7 @@ function ClassManagement() {
 
                     <div className="grid gap-5 md:grid-cols-2">
                       <FormInput
-                        label="Mã đợt / mã lớp"
+                        label="Mã đợt / mã khóa đào tạo"
                         value={openingForm.class_code}
                         onChange={(value) =>
                           updateOpeningField("class_code", value)
@@ -3136,6 +3244,14 @@ function ClassManagement() {
           key={progressOpening.id}
           opening={progressOpening}
           onClose={() => setProgressOpening(null)}
+        />
+      )}
+      {importOpening && (
+        <OpeningStudentImportModal
+          key={importOpening.id}
+          opening={importOpening}
+          onClose={() => setImportOpening(null)}
+          onImported={refreshSelectedClassAfterImport}
         />
       )}
     </div>

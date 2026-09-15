@@ -2,6 +2,62 @@ const ExcelJS = require("exceljs");
 
 const TrainingClassModel = require("../models/trainingClassModel");
 const AdminActivityLogModel = require("../models/adminActivityLogModel");
+const MissionModel = require("../models/missionModel");
+
+function parseMissionId(body = {}) {
+  if (Object.prototype.hasOwnProperty.call(body, "mission_source")) {
+    return { error: "mission_source không được chấp nhận trên khóa học." };
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(body, "mission_id") ||
+    body.mission_id === undefined
+  ) {
+    return { provided: false, value: null };
+  }
+  if (body.mission_id === null) return { provided: true, value: null };
+  if (
+    typeof body.mission_id !== "string" &&
+    typeof body.mission_id !== "number"
+  ) {
+    return { error: "mission_id không hợp lệ." };
+  }
+  const rawValue = String(body.mission_id).trim();
+  if (!rawValue) return { provided: true, value: null };
+  if (!/^[1-9]\d*$/.test(rawValue))
+    return { error: "mission_id không hợp lệ." };
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value))
+    return { error: "mission_id không hợp lệ." };
+  return { provided: true, value };
+}
+
+async function validateMissionAssignment(parsed, existingMissionId = null) {
+  if (!parsed.provided || parsed.value === null) return null;
+  if (Number(existingMissionId) === parsed.value) return null;
+  const mission = await MissionModel.findById(parsed.value);
+  if (!mission)
+    return {
+      status: 400,
+      code: "INVALID_MISSION_ID",
+      message: "Nhiệm vụ không tồn tại.",
+    };
+  if (mission.status !== "ACTIVE") {
+    return {
+      status: 409,
+      code: "INACTIVE_MISSION",
+      message: "Không thể gán nhiệm vụ đã ngừng hoạt động.",
+    };
+  }
+  return null;
+}
+
+function missionError(res, error) {
+  return res.status(error.status || 400).json({
+    success: false,
+    code: error.code || "INVALID_MISSION_ID",
+    message: error.message || error.error,
+  });
+}
 async function writeAdminActivityLog(req, data) {
   try {
     await AdminActivityLogModel.create({
@@ -755,6 +811,11 @@ class TrainingClassController {
   // =========================================================
   static async store(req, res) {
     try {
+      const parsedMissionId = parseMissionId(req.body);
+      if (parsedMissionId.error) return missionError(res, parsedMissionId);
+      const assignmentError = await validateMissionAssignment(parsedMissionId);
+      if (assignmentError) return missionError(res, assignmentError);
+
       // =======================================================
       // DỮ LIỆU LỚP HỌC
       // =======================================================
@@ -995,6 +1056,7 @@ class TrainingClassController {
 
         learning_outcomes: learningOutcomes || null,
         mission: mission || null,
+        mission_id: parsedMissionId.value,
 
         status,
 
@@ -1389,6 +1451,14 @@ class TrainingClassController {
         });
       }
 
+      const parsedMissionId = parseMissionId(req.body);
+      if (parsedMissionId.error) return missionError(res, parsedMissionId);
+      const assignmentError = await validateMissionAssignment(
+        parsedMissionId,
+        existing.mission_id,
+      );
+      if (assignmentError) return missionError(res, assignmentError);
+
       const trainingCourseId = Number(req.body.training_course_id);
 
       const className = String(req.body.class_name || "").trim();
@@ -1454,6 +1524,11 @@ class TrainingClassController {
         ? `/uploads/courses/${req.file.filename}`
         : existing.thumbnail;
 
+      const legacyMissionProvided = Object.prototype.hasOwnProperty.call(
+        req.body,
+        "mission",
+      );
+
       await TrainingClassModel.updateCourse(id, {
         training_course_id: trainingCourseId,
 
@@ -1474,7 +1549,12 @@ class TrainingClassController {
 
         learning_outcomes:
           String(req.body.learning_outcomes || "").trim() || null,
-        mission: String(req.body.mission || "").trim() || null,
+        mission_provided: legacyMissionProvided,
+        mission: legacyMissionProvided
+          ? String(req.body.mission || "").trim() || null
+          : null,
+        mission_id_provided: parsedMissionId.provided,
+        mission_id: parsedMissionId.value,
 
         status,
       });
@@ -1863,5 +1943,7 @@ class TrainingClassController {
     }
   }
 }
+
+TrainingClassController._test = { parseMissionId, validateMissionAssignment };
 
 module.exports = TrainingClassController;

@@ -1,13 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Eye, Loader2, Trash2, Download, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Loader2, Download, X } from "lucide-react";
+import missionApi from "../../services/missionApi";
 
 const API_URL = "http://localhost:5000/api";
 
 const EMPTY_FORM = {
   training_course_name: "",
   description: "",
+  year: "",
+  mission_id: "",
   status: "ACTIVE",
+};
+
+const TRAINING_YEAR_OPTIONS = Array.from(
+  { length: 101 },
+  (_, index) => 2100 - index,
+);
+
+const MISSION_SOURCE_LABELS = {
+  A: "Nhiệm vụ của Sở Khoa học và Công nghệ",
+  B: "Nhiệm vụ của Bộ/Sở ban ngành khác / dịch vụ phối hợp với đối tác",
 };
 
 const getStatusLabel = (status) =>
@@ -23,12 +36,25 @@ function getStatusClass(status) {
   return "border-slate-200 bg-slate-100 text-slate-600";
 }
 
+function formatDetailDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("vi-VN").format(date);
+}
+
 export default function Courses() {
   const [trainingCourses, setTrainingCourses] = useState([]);
+  const [activeMissions, setActiveMissions] = useState([]);
+  const [missionsLoading, setMissionsLoading] = useState(false);
+  const [currentCanonicalMission, setCurrentCanonicalMission] = useState(null);
 
   const [search, setSearch] = useState("");
 
   const [statusFilter, setStatusFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
+  const [filterYearOptions, setFilterYearOptions] = useState([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -43,6 +69,13 @@ export default function Courses() {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [courseClasses, setCourseClasses] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLevel, setDetailLevel] = useState("PROGRAM");
+  const [selectedTrainingClass, setSelectedTrainingClass] = useState(null);
+  const [classOpenings, setClassOpenings] = useState([]);
+  const [selectedOpening, setSelectedOpening] = useState(null);
+  const [openingStudents, setOpeningStudents] = useState([]);
+  const [openingStudentTotal, setOpeningStudentTotal] = useState(0);
+  const [detailError, setDetailError] = useState("");
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
 
   const token = localStorage.getItem("admin_token");
@@ -65,6 +98,10 @@ export default function Courses() {
         params.status = statusFilter;
       }
 
+      if (yearFilter) {
+        params.year = yearFilter;
+      }
+
       const response = await axios.get(`${API_URL}/training-courses`, {
         params,
       });
@@ -79,12 +116,50 @@ export default function Courses() {
 
       alert(
         error.response?.data?.message ||
-          "Không thể tải danh sách khóa đào tạo.",
+          "Không thể tải danh sách nhiệm vụ đào tạo.",
       );
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, yearFilter]);
+
+  const fetchFilterYearOptions = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/training-courses/years`);
+      setFilterYearOptions(
+        Array.isArray(response.data?.data) ? response.data.data : [],
+      );
+    } catch (error) {
+      console.error(
+        "Lá»—i táº£i danh sÃ¡ch nÄƒm khÃ³a Ä‘Ã o táº¡o:",
+        error.response?.data || error,
+      );
+      setFilterYearOptions([]);
+    }
+  }, []);
+
+  const fetchActiveMissions = useCallback(async () => {
+    try {
+      setMissionsLoading(true);
+      const response = await missionApi.list({ status: "ACTIVE" });
+      setActiveMissions(
+        Array.isArray(response.data?.data) ? response.data.data : [],
+      );
+    } catch (error) {
+      console.error(
+        "Lỗi tải danh sách nhiệm vụ:",
+        error.response?.data || error,
+      );
+      setActiveMissions([]);
+      alert(
+        error.response?.data?.message ||
+          "Không thể tải danh sách nhiệm vụ đang hoạt động.",
+      );
+    } finally {
+      setMissionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchTrainingCourses();
@@ -92,6 +167,22 @@ export default function Courses() {
 
     return () => clearTimeout(timer);
   }, [fetchTrainingCourses]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchActiveMissions();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [fetchActiveMissions]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchFilterYearOptions();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [fetchFilterYearOptions]);
 
   const totalPages = Math.max(1, Math.ceil(trainingCourses.length / limit));
   const safePage = Math.min(page, totalPages);
@@ -123,6 +214,7 @@ export default function Courses() {
   );
   const openCreateModal = () => {
     setEditingId(null);
+    setCurrentCanonicalMission(null);
 
     setFormData({
       ...EMPTY_FORM,
@@ -132,11 +224,16 @@ export default function Courses() {
   };
   const openEditModal = (item) => {
     setEditingId(item.id);
+    setCurrentCanonicalMission(item.canonical_mission || null);
 
     setFormData({
       training_course_name: item.training_course_name || "",
 
       description: item.description || "",
+
+      year: item.year == null ? "" : String(item.year),
+
+      mission_id: item.mission_id ? String(item.mission_id) : "",
 
       status: item.status || "ACTIVE",
     });
@@ -150,6 +247,13 @@ export default function Courses() {
       // Mở popup trước với thông tin đang có
       setSelectedCourse(item);
       setCourseClasses([]);
+      setDetailLevel("PROGRAM");
+      setSelectedTrainingClass(null);
+      setClassOpenings([]);
+      setSelectedOpening(null);
+      setOpeningStudents([]);
+      setOpeningStudentTotal(0);
+      setDetailError("");
 
       // Lấy các lớp thuộc khóa đào tạo này
       const response = await axios.get(`${API_URL}/classes`, {
@@ -170,8 +274,47 @@ export default function Courses() {
       setCourseClasses([]);
 
       alert(
-        error.response?.data?.message || "Không thể tải chi tiết khóa đào tạo.",
+        error.response?.data?.message || "Không thể tải chi tiết nhiệm vụ đào tạo.",
       );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+  const openCourseDetail = async (course) => {
+    try {
+      setSelectedTrainingClass(course);
+      setDetailLevel("COURSE");
+      setDetailLoading(true);
+      setDetailError("");
+      setClassOpenings([]);
+      const response = await axios.get(`${API_URL}/course-classes/course/${course.id}`);
+      setClassOpenings(Array.isArray(response.data?.data) ? response.data.data : []);
+    } catch (error) {
+      setDetailError(error.response?.data?.message || "Không thể tải danh sách Khóa đào tạo.");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+  const openClassDetail = async (opening) => {
+    try {
+      setSelectedOpening(opening);
+      setDetailLevel("CLASS");
+      setDetailLoading(true);
+      setDetailError("");
+      setOpeningStudents([]);
+      setOpeningStudentTotal(0);
+      const [detailResponse, studentResponse] = await Promise.all([
+        axios.get(`${API_URL}/course-classes/${opening.id}`),
+        axios.get(`${API_URL}/registrations`, {
+          ...authConfig,
+          params: { class_id: opening.id, limit: 100 },
+        }),
+      ]);
+      setSelectedOpening(detailResponse.data?.data || opening);
+      setOpeningStudents(Array.isArray(studentResponse.data?.data) ? studentResponse.data.data : []);
+      setOpeningStudentTotal(Number(studentResponse.data?.total) || 0);
+    } catch (error) {
+      setDetailError(error.response?.data?.message || "Không thể tải chi tiết Khóa đào tạo.");
     } finally {
       setDetailLoading(false);
     }
@@ -183,6 +326,7 @@ export default function Courses() {
 
     setShowModal(false);
     setEditingId(null);
+    setCurrentCanonicalMission(null);
 
     setFormData({
       ...EMPTY_FORM,
@@ -207,6 +351,10 @@ export default function Courses() {
 
       if (statusFilter) {
         params.status = statusFilter;
+      }
+
+      if (yearFilter) {
+        params.year = yearFilter;
       }
 
       const response = await axios.get(`${API_URL}/training-courses/export`, {
@@ -239,7 +387,7 @@ export default function Courses() {
     } catch (error) {
       console.error("Xuất Excel khóa đào tạo lỗi:", error);
 
-      let message = "Không thể xuất Excel khóa đào tạo.";
+      let message = "Không thể xuất Excel nhiệm vụ đào tạo.";
 
       try {
         const errorBlob = error.response?.data;
@@ -268,7 +416,7 @@ export default function Courses() {
     const trainingCourseName = formData.training_course_name.trim();
 
     if (!trainingCourseName) {
-      alert("Vui lòng nhập tên khóa đào tạo.");
+      alert("Vui lòng nhập tên nhiệm vụ đào tạo.");
 
       return;
     }
@@ -277,6 +425,10 @@ export default function Courses() {
       training_course_name: trainingCourseName,
 
       description: formData.description.trim() || null,
+
+      year: formData.year === "" ? null : Number(formData.year),
+
+      mission_id: formData.mission_id,
 
       status: formData.status,
     };
@@ -303,20 +455,21 @@ export default function Courses() {
       alert(
         response.data.message ||
           (editingId
-            ? "Cập nhật khóa đào tạo thành công."
-            : "Thêm khóa đào tạo thành công."),
+            ? "Cập nhật nhiệm vụ đào tạo thành công."
+            : "Thêm nhiệm vụ đào tạo thành công."),
       );
 
       closeModal();
 
       await fetchTrainingCourses();
+      await fetchFilterYearOptions();
     } catch (error) {
       console.error(
         "TRAINING COURSE SAVE ERROR:",
         error.response?.data || error,
       );
 
-      alert(error.response?.data?.message || "Không thể lưu khóa đào tạo.");
+      alert(error.response?.data?.message || "Không thể lưu nhiệm vụ đào tạo.");
     } finally {
       setSaving(false);
     }
@@ -324,8 +477,8 @@ export default function Courses() {
 
   const handleDelete = async (item) => {
     const accepted = window.confirm(
-      `Xóa khóa đào tạo "${item.training_course_name}"?\n\n` +
-        "Khóa đào tạo đang có lớp học sẽ không thể xóa.",
+      `Xóa nhiệm vụ đào tạo "${item.training_course_name}"?\n\n` +
+        "Nhiệm vụ đào tạo đang có khóa đào tạo sẽ không thể xóa.",
     );
 
     if (!accepted) {
@@ -340,11 +493,11 @@ export default function Courses() {
         authConfig,
       );
 
-      alert(response.data.message || "Xóa khóa đào tạo thành công.");
+      alert(response.data.message || "Xóa nhiệm vụ đào tạo thành công.");
 
       await fetchTrainingCourses();
     } catch (error) {
-      alert(error.response?.data?.message || "Không thể xóa khóa đào tạo.");
+      alert(error.response?.data?.message || "Không thể xóa nhiệm vụ đào tạo.");
     } finally {
       setDeletingId(null);
     }
@@ -355,11 +508,11 @@ export default function Courses() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            Quản lý khóa đào tạo
+            Quản lý nhiệm vụ đào tạo
           </h1>
 
           <p className="mt-1 text-sm text-slate-500">
-            Quản lý các khóa đào tạo và theo dõi số lớp học trực thuộc.
+            Quản lý các nhiệm vụ đào tạo và theo dõi số khóa đào tạo trực thuộc.
           </p>
         </div>
 
@@ -391,13 +544,13 @@ export default function Courses() {
             onClick={openCreateModal}
             className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
           >
-            Thêm khóa đào tạo
+            Thêm nhiệm vụ đào tạo
           </button>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Tổng khóa đào tạo" value={summary.total} />
+        <SummaryCard label="Tổng nhiệm vụ đào tạo" value={summary.total} />
 
         <SummaryCard
           label="Đang hoạt động"
@@ -406,7 +559,7 @@ export default function Courses() {
         />
 
         <SummaryCard
-          label="Tổng lớp học"
+          label="Tổng khóa đào tạo"
           value={summary.totalClasses}
           valueClass="text-blue-600"
         />
@@ -419,7 +572,7 @@ export default function Courses() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-[1fr_240px]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_200px_240px]">
           <input
             value={search}
             onChange={(event) => {
@@ -427,9 +580,25 @@ export default function Courses() {
 
               setPage(1);
             }}
-            placeholder="Tìm tên khóa đào tạo..."
+            placeholder="Tìm tên nhiệm vụ đào tạo..."
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
           />
+
+          <select
+            value={yearFilter}
+            onChange={(event) => {
+              setYearFilter(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
+          >
+            <option value="">Tất cả năm</option>
+            {filterYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
 
           <select
             value={statusFilter}
@@ -446,12 +615,13 @@ export default function Courses() {
 
             <option value="INACTIVE">Ngừng hoạt động</option>
           </select>
-          {(search || statusFilter) && (
+          {(search || yearFilter || statusFilter) && (
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={() => {
                   setSearch("");
+                  setYearFilter("");
                   setStatusFilter("");
                   setPage(1);
                 }}
@@ -466,16 +636,20 @@ export default function Courses() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1380px]">
+          <table className="w-full min-w-[1580px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-5 py-4">STT</th>
 
-                <th className="px-5 py-4">Khóa đào tạo</th>
+                <th className="px-5 py-4">Nhiệm vụ đào tạo</th>
+
+                <th className="px-5 py-4">Năm</th>
 
                 <th className="px-5 py-4">Mô tả</th>
 
-                <th className="px-5 py-4 text-center">Lớp học</th>
+                <th className="px-5 py-4">Nhiệm vụ</th>
+
+                <th className="px-5 py-4 text-center">Khóa đào tạo</th>
 
                 <th className="px-5 py-4 text-center">Đợt tổ chức</th>
 
@@ -487,24 +661,24 @@ export default function Courses() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={9} className="px-5 py-16 text-center">
                     <Loader2
                       size={30}
                       className="mx-auto animate-spin text-green-600"
                     />
 
                     <p className="mt-3 text-sm text-slate-500">
-                      Đang tải danh sách khóa đào tạo...
+                      Đang tải danh sách nhiệm vụ đào tạo...
                     </p>
                   </td>
                 </tr>
               ) : paginatedCourses.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="px-5 py-16 text-center text-slate-500"
                   >
-                    Không tìm thấy khóa đào tạo phù hợp.
+                    Không tìm thấy nhiệm vụ đào tạo phù hợp.
                   </td>
                 </tr>
               ) : (
@@ -527,12 +701,22 @@ export default function Courses() {
                       </p>
                     </td>
 
+                    <td className="px-5 py-4 font-medium text-slate-700">
+                      {item.year ?? "Chưa xác định"}
+                    </td>
+
                     {/* MÔ TẢ */}
 
                     <td className="max-w-[420px] px-5 py-4">
                       <p className="line-clamp-3 leading-6 text-slate-600">
                         {item.description || "Chưa có mô tả"}
                       </p>
+                    </td>
+
+                    {/* NHIỆM VỤ CANONICAL */}
+
+                    <td className="max-w-[360px] px-5 py-4">
+                      <CanonicalMissionSummary mission={item.canonical_mission} />
                     </td>
 
                     {/* LỚP HỌC */}
@@ -578,7 +762,7 @@ export default function Courses() {
                           type="button"
                           onClick={() => handleViewCourse(item)}
                           className="rounded-lg border border-blue-200 p-2 text-blue-600 hover:bg-blue-50"
-                          title="Xem chi tiết khóa đào tạo"
+                          title="Xem chi tiết nhiệm vụ đào tạo"
                         >
                           <Eye size={17} />
                         </button>
@@ -614,7 +798,7 @@ export default function Courses() {
             <b>
               {startItem}-{endItem}
             </b>{" "}
-            trên <b>{trainingCourses.length}</b> khóa đào tạo
+            trên <b>{trainingCourses.length}</b> nhiệm vụ đào tạo
           </p>
           <div className="flex items-center gap-3">
             <select
@@ -664,11 +848,11 @@ export default function Courses() {
             <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Chi tiết khóa đào tạo
+                  Chi tiết nhiệm vụ đào tạo
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Thông tin khóa đào tạo và danh sách lớp học trực thuộc.
+                  Thông tin nhiệm vụ đào tạo và danh sách khóa đào tạo trực thuộc.
                 </p>
               </div>
 
@@ -677,6 +861,12 @@ export default function Courses() {
                 onClick={() => {
                   setSelectedCourse(null);
                   setCourseClasses([]);
+                  setDetailLevel("PROGRAM");
+                  setSelectedTrainingClass(null);
+                  setClassOpenings([]);
+                  setSelectedOpening(null);
+                  setOpeningStudents([]);
+                  setDetailError("");
                 }}
                 className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
               >
@@ -685,6 +875,17 @@ export default function Courses() {
             </div>
 
             <div className="space-y-6 p-6">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                <button type="button" onClick={() => setDetailLevel("PROGRAM")} className={detailLevel === "PROGRAM" ? "font-semibold text-slate-900" : "font-semibold text-green-700 hover:underline"}>Nhiệm vụ đào tạo</button>
+                {detailLevel !== "PROGRAM" && <><ChevronRight size={15} className="text-slate-400" /><button type="button" onClick={() => setDetailLevel("COURSE")} className={detailLevel === "COURSE" ? "font-semibold text-slate-900" : "font-semibold text-green-700 hover:underline"}>Nhiệm vụ khóa đào tạo</button></>}
+                {detailLevel === "CLASS" && <><ChevronRight size={15} className="text-slate-400" /><span className="font-semibold text-slate-900">Khóa đào tạo</span></>}
+              </div>
+
+              {detailLevel !== "PROGRAM" && <button type="button" onClick={() => setDetailLevel(detailLevel === "CLASS" ? "COURSE" : "PROGRAM")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"><ChevronLeft size={16} />Quay lại</button>}
+
+              {detailError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{detailError}</div>}
+
+              {detailLevel === "PROGRAM" && <>
               {/* THÔNG TIN KHÓA */}
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -707,12 +908,17 @@ export default function Courses() {
                   </span>
                 </div>
 
-                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <CourseDetailItem
-                    label="Số lớp học"
+                    label="Năm"
+                    value={selectedCourse.year ?? "Chưa xác định"}
+                  />
+
+                  <CourseDetailItem
+                    label="Số khóa đào tạo"
                     value={`${Number(
                       selectedCourse.total_course_groups || 0,
-                    )} lớp`}
+                    )} khóa`}
                   />
 
                   <CourseDetailItem
@@ -725,17 +931,28 @@ export default function Courses() {
                     value={getStatusLabel(selectedCourse.status)}
                   />
                 </div>
+
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Nhiệm vụ
+                  </p>
+                  <div className="mt-2">
+                    <CanonicalMissionSummary
+                      mission={selectedCourse.canonical_mission}
+                    />
+                  </div>
+                </div>
               </section>
 
               {/* DANH SÁCH LỚP */}
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">
-                    Lớp học thuộc khóa đào tạo
+                    Nhiệm vụ khóa đào tạo thuộc nhiệm vụ đào tạo
                   </h3>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    {courseClasses.length} lớp học.
+                    {courseClasses.length} khóa đào tạo.
                   </p>
                 </div>
 
@@ -747,17 +964,17 @@ export default function Courses() {
                     />
 
                     <p className="mt-3 text-sm text-slate-500">
-                      Đang tải danh sách lớp học...
+                      Đang tải danh sách khóa đào tạo...
                     </p>
                   </div>
                 ) : courseClasses.length === 0 ? (
                   <div className="mt-5 rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center">
                     <p className="font-medium text-slate-700">
-                      Chưa có lớp học
+                      Chưa có khóa đào tạo
                     </p>
 
                     <p className="mt-1 text-sm text-slate-500">
-                      Khóa đào tạo này chưa có lớp học trực thuộc.
+                      Nhiệm vụ đào tạo này chưa có khóa đào tạo trực thuộc.
                     </p>
                   </div>
                 ) : (
@@ -766,7 +983,7 @@ export default function Courses() {
                       <table className="w-full min-w-[900px]">
                         <thead className="bg-slate-50">
                           <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            <th className="px-4 py-3">Lớp học</th>
+                            <th className="px-4 py-3">Nhiệm vụ khóa đào tạo</th>
 
                             <th className="px-4 py-3">Thời lượng</th>
 
@@ -777,6 +994,7 @@ export default function Courses() {
                             <th className="px-4 py-3 text-center">Học viên</th>
 
                             <th className="px-4 py-3">Trạng thái</th>
+                            <th className="w-40 px-4 py-3 text-right">Thao tác</th>
                           </tr>
                         </thead>
 
@@ -819,6 +1037,9 @@ export default function Courses() {
                                   {getCourseClassStatusLabel(classItem.status)}
                                 </span>
                               </td>
+                              <td className="w-40 px-4 py-4 text-right">
+                                <button type="button" onClick={() => openCourseDetail(classItem)} className="ml-auto inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50" title="Xem chi tiết"><Eye size={17} />Xem chi tiết</button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -827,6 +1048,23 @@ export default function Courses() {
                   </div>
                 )}
               </section>
+              </>}
+
+              {detailLevel === "COURSE" && <>
+                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1"><h3 className="break-words text-2xl font-bold text-slate-900">{selectedTrainingClass?.class_name || "Chưa đặt tên"}</h3><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{selectedTrainingClass?.description || selectedTrainingClass?.short_description || "Chưa có mô tả."}</p></div><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getCourseClassStatusClass(selectedTrainingClass?.status)}`}>{getCourseClassStatusLabel(selectedTrainingClass?.status)}</span></div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2"><CourseDetailItem label="Tổng Khóa đào tạo" value={classOpenings.length} /><CourseDetailItem label="Tổng học viên" value={classOpenings.reduce((sum, item) => sum + (Number(item.current_students) || 0), 0)} /></div>
+                </section>
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4"><h3 className="font-bold text-slate-900">Khóa đào tạo</h3><p className="mt-1 text-sm text-slate-500">Danh sách Khóa đào tạo trực thuộc.</p></div>
+                  {detailLoading ? <div className="py-12 text-center"><Loader2 size={28} className="mx-auto animate-spin text-green-600" /><p className="mt-3 text-sm text-slate-500">Đang tải Khóa đào tạo...</p></div> : classOpenings.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">Chưa có Khóa đào tạo trực thuộc.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Khóa đào tạo</th><th className="px-4 py-3">Thời gian / Địa điểm</th><th className="px-4 py-3 text-center">Học viên</th><th className="px-4 py-3">Trạng thái</th><th className="w-40 px-4 py-3 text-right">Thao tác</th></tr></thead><tbody>{classOpenings.map((opening) => <tr key={opening.id} className="border-t border-slate-100"><td className="max-w-[280px] px-4 py-4 font-semibold text-slate-900"><p className="break-words">{opening.class_name || "—"}</p></td><td className="max-w-[300px] px-4 py-4 text-slate-600"><p>{[formatDetailDate(opening.organization_start_date), formatDetailDate(opening.organization_end_date)].filter(Boolean).join(" – ") || opening.schedule_note || "Chưa có thời gian"}</p><p className="mt-1 text-xs text-slate-500">{opening.location || "Chưa có địa điểm"}</p></td><td className="px-4 py-4 text-center font-semibold">{Number(opening.current_students) || 0}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getCourseClassStatusClass(opening.effective_status || opening.status)}`}>{getCourseClassStatusLabel(opening.effective_status || opening.status)}</span></td><td className="w-40 px-4 py-4 text-right"><button type="button" onClick={() => openClassDetail(opening)} className="ml-auto inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50" title="Xem chi tiết"><Eye size={17} />Xem chi tiết</button></td></tr>)}</tbody></table></div>}
+                </section>
+              </>}
+
+              {detailLevel === "CLASS" && <>
+                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1"><h3 className="break-words text-2xl font-bold text-slate-900">{selectedOpening?.class_name || "Chưa đặt tên"}</h3><p className="mt-3 text-sm text-slate-600">{[formatDetailDate(selectedOpening?.organization_start_date), formatDetailDate(selectedOpening?.organization_end_date)].filter(Boolean).join(" – ") || selectedOpening?.schedule_note || "Chưa có thời gian"}</p><p className="mt-1 text-sm text-slate-500">{selectedOpening?.location || "Chưa có địa điểm"}</p></div><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getCourseClassStatusClass(selectedOpening?.effective_status || selectedOpening?.status)}`}>{getCourseClassStatusLabel(selectedOpening?.effective_status || selectedOpening?.status)}</span></div></section>
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4"><h3 className="font-bold text-slate-900">Danh sách học viên</h3><span className="text-sm font-semibold text-slate-600">{openingStudentTotal} học viên</span></div>{detailLoading ? <div className="py-12 text-center"><Loader2 size={28} className="mx-auto animate-spin text-green-600" /></div> : openingStudents.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">Khóa đào tạo chưa có học viên.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Họ và tên</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Điện thoại</th><th className="px-4 py-3">Trạng thái</th></tr></thead><tbody>{openingStudents.map((student) => <tr key={student.id} className="border-t border-slate-100"><td className="px-4 py-3 font-semibold text-slate-900">{student.fullname || "—"}</td><td className="px-4 py-3 text-slate-600">{student.email || "—"}</td><td className="px-4 py-3 text-slate-600">{student.phone || "—"}</td><td className="px-4 py-3 text-slate-600">{student.register_status || "—"}</td></tr>)}</tbody></table></div>}</section>
+              </>}
             </div>
           </div>
         </div>
@@ -838,11 +1076,11 @@ export default function Courses() {
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
                   {editingId
-                    ? "Cập nhật khóa đào tạo"
-                    : "Thêm khóa đào tạo mới"}
+                    ? "Cập nhật nhiệm vụ đào tạo"
+                    : "Thêm nhiệm vụ đào tạo mới"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Khóa đào tạo có thể bao gồm nhiều lớp học và nhiều đợt tổ
+                  Nhiệm vụ đào tạo có thể bao gồm nhiều khóa đào tạo và nhiều đợt tổ
                   chức.
                 </p>
               </div>
@@ -860,21 +1098,80 @@ export default function Courses() {
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="space-y-5">
                   <FormInput
-                    label="Tên khóa đào tạo"
+                    label="Tên nhiệm vụ đào tạo"
                     required
                     value={formData.training_course_name}
                     onChange={(value) =>
                       updateField("training_course_name", value)
                     }
-                    placeholder="Nhập tên khóa đào tạo..."
+                    placeholder="Nhập tên nhiệm vụ đào tạo..."
                   />
 
                   <FormTextArea
                     label="Mô tả"
                     value={formData.description}
                     onChange={(value) => updateField("description", value)}
-                    placeholder="Mô tả nội dung và mục tiêu của khóa đào tạo..."
+                    placeholder="Mô tả nội dung và mục tiêu của nhiệm vụ đào tạo..."
                   />
+
+                  <FormSelect
+                    label="Năm"
+                    value={formData.year}
+                    onChange={(value) => updateField("year", value)}
+                  >
+                    <option value="">Chưa xác định</option>
+                    {TRAINING_YEAR_OPTIONS.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </FormSelect>
+
+                  <FormSelect
+                    label="Nhiệm vụ"
+                    value={formData.mission_id}
+                    onChange={(value) => updateField("mission_id", value)}
+                    disabled={missionsLoading}
+                  >
+                    <option value="">
+                      {missionsLoading
+                        ? "Đang tải nhiệm vụ..."
+                        : "Không chọn nhiệm vụ"}
+                    </option>
+
+                    {currentCanonicalMission?.status === "INACTIVE" && (
+                      <optgroup label="Nhiệm vụ hiện tại">
+                        <option value={String(currentCanonicalMission.id)}>
+                          [Ngừng hoạt động] {currentCanonicalMission.mission_name}
+                        </option>
+                      </optgroup>
+                    )}
+
+                    {Object.entries(MISSION_SOURCE_LABELS).map(
+                      ([source, label]) => {
+                        const sourceMissions = activeMissions.filter(
+                          (mission) => mission.mission_source === source,
+                        );
+
+                        if (sourceMissions.length === 0) {
+                          return null;
+                        }
+
+                        return (
+                          <optgroup key={source} label={`${source} — ${label}`}>
+                            {sourceMissions.map((mission) => (
+                              <option
+                                key={mission.id}
+                                value={String(mission.id)}
+                              >
+                                {mission.mission_name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      },
+                    )}
+                  </FormSelect>
 
                   <FormSelect
                     label="Trạng thái"
@@ -907,7 +1204,7 @@ export default function Courses() {
                     ? "Đang lưu..."
                     : editingId
                       ? "Lưu thay đổi"
-                      : "Thêm khóa đào tạo"}
+                      : "Thêm nhiệm vụ đào tạo"}
                 </button>
               </div>
             </form>
@@ -917,6 +1214,32 @@ export default function Courses() {
     </div>
   );
 }
+
+function CanonicalMissionSummary({ mission }) {
+  if (!mission) {
+    return <span className="text-sm text-slate-400">Chưa chọn nhiệm vụ</span>;
+  }
+
+  return (
+    <div>
+      <p className="font-semibold leading-6 text-slate-900">
+        {mission.mission_name}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        {mission.mission_source} —
+        {` ${MISSION_SOURCE_LABELS[mission.mission_source] || mission.mission_source}`}
+      </p>
+      <span
+        className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClass(
+          mission.status,
+        )}`}
+      >
+        {getStatusLabel(mission.status)}
+      </span>
+    </div>
+  );
+}
+
 function CourseDetailItem({ label, value }) {
   return (
     <div className="rounded-xl bg-slate-50 p-4">

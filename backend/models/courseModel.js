@@ -1,5 +1,28 @@
 const db = require("../config/db");
 
+function withCanonicalMission(row) {
+  const {
+    canonical_mission_name,
+    canonical_mission_source,
+    canonical_mission_status,
+    ...course
+  } = row;
+
+  course.mission_id = course.mission_id === null
+    ? null
+    : Number(course.mission_id);
+  course.canonical_mission = course.mission_id === null
+    ? null
+    : {
+        id: course.mission_id,
+        mission_name: canonical_mission_name,
+        mission_source: canonical_mission_source,
+        status: canonical_mission_status,
+      };
+
+  return course;
+}
+
 class Course {
   // =========================================================
   // LẤY DANH SÁCH KHÓA HỌC
@@ -35,11 +58,17 @@ class Course {
     c.duration,
     c.target_audience,
     c.learning_outcomes,
+    c.mission,
+    c.mission_id,
     c.status,
     c.created_at,
     c.updated_at,
 
     tp.program_name,
+
+    m.mission_name AS canonical_mission_name,
+    m.mission_source AS canonical_mission_source,
+    m.status AS canonical_mission_status,
 
  COUNT(DISTINCT cc.id) AS total_classes,
 
@@ -51,6 +80,8 @@ FROM courses c
 
 LEFT JOIN training_programs tp
 ON tp.id = c.program_id
+LEFT JOIN missions m
+ON m.id = c.mission_id
 LEFT JOIN course_classes cc
 ON cc.course_id = c.id
 AND cc.deleted_at IS NULL
@@ -67,10 +98,15 @@ AND cc.deleted_at IS NULL
         c.duration,
         c.target_audience,
         c.learning_outcomes,
+        c.mission,
+        c.mission_id,
         c.status,
         c.created_at,
         c.updated_at,
-        tp.program_name
+        tp.program_name,
+        m.mission_name,
+        m.mission_source,
+        m.status
 
       ORDER BY c.id DESC
     `;
@@ -78,7 +114,7 @@ AND cc.deleted_at IS NULL
     const [rows] = await db.query(sql, params);
 
     return rows.map((item) => ({
-      ...item,
+      ...withCanonicalMission(item),
 
       total_classes: Number(item.total_classes) || 0,
 
@@ -105,11 +141,17 @@ AND cc.deleted_at IS NULL
         c.duration,
         c.target_audience,
         c.learning_outcomes,
+        c.mission,
+        c.mission_id,
         c.status,
         c.created_at,
         c.updated_at,
 
         tp.program_name,
+
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
 
        (
   SELECT COUNT(*)
@@ -122,6 +164,9 @@ AND cc.deleted_at IS NULL
 
       LEFT JOIN training_programs tp
         ON tp.id = c.program_id
+
+      LEFT JOIN missions m
+        ON m.id = c.mission_id
 
   
 
@@ -138,7 +183,7 @@ WHERE c.id = ?
     }
 
     return {
-      ...rows[0],
+      ...withCanonicalMission(rows[0]),
       total_classes: Number(rows[0].total_classes) || 0,
     };
   }
@@ -160,11 +205,16 @@ WHERE c.id = ?
         c.duration,
         c.target_audience,
         c.learning_outcomes,
+        c.mission,
+        c.mission_id,
         c.status,
         c.created_at,
         c.updated_at,
 
         tp.program_name,
+        m.mission_name AS canonical_mission_name,
+        m.mission_source AS canonical_mission_source,
+        m.status AS canonical_mission_status,
        
 
      (
@@ -179,6 +229,9 @@ WHERE c.id = ?
       LEFT JOIN training_programs tp
         ON tp.id = c.program_id
 
+      LEFT JOIN missions m
+        ON m.id = c.mission_id
+
  
 
      WHERE c.program_id = ?
@@ -189,7 +242,7 @@ WHERE c.id = ?
     const [rows] = await db.query(sql, [programId]);
 
     return rows.map((item) => ({
-      ...item,
+      ...withCanonicalMission(item),
       total_classes: Number(item.total_classes) || 0,
     }));
   }
@@ -260,11 +313,12 @@ WHERE c.id = ?
         duration,
         target_audience,
         learning_outcomes,
+        mission_id,
         status
       )
       VALUES
       (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `;
 
@@ -278,6 +332,7 @@ WHERE c.id = ?
       data.duration || null,
       data.target_audience || null,
       data.learning_outcomes || null,
+      data.mission_id ?? null,
       data.status || "OPEN",
     ]);
 
@@ -302,6 +357,7 @@ WHERE c.id = ?
         duration = ?,
         target_audience = ?,
         learning_outcomes = ?,
+        mission_id = IF(?, ?, mission_id),
         status = ?
 
       WHERE id = ?
@@ -317,6 +373,8 @@ WHERE c.id = ?
       data.duration || null,
       data.target_audience || null,
       data.learning_outcomes || null,
+      data.mission_id_provided ? 1 : 0,
+      data.mission_id,
       data.status || "OPEN",
       id,
     ]);

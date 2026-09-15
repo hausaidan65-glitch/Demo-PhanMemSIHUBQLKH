@@ -35,6 +35,8 @@ const eventReportRoutes = require("./routes/eventReportRoutes");
 const networkingReportRoutes = require("./routes/networkingReportRoutes");
 const SyncCourseClassStatusJob = require("./jobs/syncCourseClassStatusJob");
 const googleFormImportRoutes = require("./routes/googleFormImportRoutes");
+const openingStudentImportRoutes = require("./routes/openingStudentImportRoutes");
+const missionRoutes = require("./routes/missionRoutes");
 const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
@@ -131,6 +133,8 @@ app.use("/api/reports/courses", courseReportRoutes);
 app.use("/api/reports/events", eventReportRoutes);
 app.use("/api/reports/networking", networkingReportRoutes);
 app.use("/api/google-form-import", googleFormImportRoutes);
+app.use("/api/opening-student-import", openingStudentImportRoutes);
+app.use("/api/missions", missionRoutes);
 /*
  * Health check dùng khi deploy.
  */

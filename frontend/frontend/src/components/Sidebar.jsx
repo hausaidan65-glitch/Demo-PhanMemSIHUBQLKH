@@ -4,10 +4,8 @@ import {
   School,
   Users,
   ClipboardList,
-  Settings,
   LogOut,
   X,
-  Mail,
   CalendarDays,
   FileSpreadsheet,
   Sprout,
@@ -16,6 +14,7 @@ import {
   ShieldCheck,
   Network,
   BarChart3,
+  ListChecks,
 } from "lucide-react";
 import logoSihub from "../assets/logoadmin.png";
 import { useState } from "react";
@@ -25,11 +24,18 @@ export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isStartupActive = location.pathname.startsWith(
-    "/admin/startup-connection-day",
+  const isSeminarActive = location.pathname.startsWith(
+    "/admin/startup-connection-day/seminars",
   );
+  const isStartupActive =
+    location.pathname.startsWith("/admin/startup-connection-day") &&
+    !isSeminarActive;
 
   const [startupOpen, setStartupOpen] = useState(isStartupActive);
+  const isNetworkingActive =
+    location.pathname.startsWith("/admin/networking-events") ||
+    isSeminarActive;
+  const [networkingOpen, setNetworkingOpen] = useState(isNetworkingActive);
   const isIncubationActive =
     location.pathname.startsWith("/admin/incubation-programs") ||
     location.pathname.startsWith("/admin/incubation-profiles");
@@ -240,6 +246,31 @@ export default function Sidebar({ open, onClose }) {
               </NavLink>
             );
           })}
+          <NavLink
+            to="/admin/missions"
+            onClick={onClose}
+            className={({ isActive }) =>
+              `group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-green-600 text-white shadow-lg shadow-green-950/30"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <ListChecks
+                  size={19}
+                  className={
+                    isActive
+                      ? "text-white"
+                      : "text-slate-400 group-hover:text-green-400"
+                  }
+                />
+                <span>Nhiệm vụ</span>
+              </>
+            )}
+          </NavLink>
           {/* =====================================================
     KHÓA ĐÀO TẠO
 ===================================================== */}
@@ -293,7 +324,7 @@ export default function Sidebar({ open, onClose }) {
                   }
                 />
 
-                <span className="truncate">Khóa đào tạo</span>
+                <span className="truncate">Nhiệm vụ đào tạo</span>
               </button>
 
               {/* BẤM MŨI TÊN → CHỈ XỔ MENU CON */}
@@ -410,7 +441,7 @@ export default function Sidebar({ open, onClose }) {
                         }
                       />
 
-                      <span>Lớp học</span>
+                      <span>Khóa đào tạo</span>
                     </>
                   )}
                 </NavLink>
@@ -586,99 +617,28 @@ export default function Sidebar({ open, onClose }) {
                   )}
                 </NavLink>
 
-                <NavLink
-                  to="/admin/startup-connection-day/seminars"
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    `
-            group
-            relative
-            flex
-            min-h-10
-            items-center
-            gap-3
-            rounded-lg
-            px-3
-            py-2
-            text-sm
-            font-medium
-            transition-all
-            ${
-              isActive
-                ? "bg-green-600 text-white"
-                : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }
-          `
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        className="
-                absolute
-                -left-4
-                top-1/2
-                h-px
-                w-4
-                bg-slate-700
-              "
-                      />
-
-                      <CalendarDays
-                        size={17}
-                        className={
-                          isActive
-                            ? "text-white"
-                            : "text-slate-500 group-hover:text-green-400"
-                        }
-                      />
-
-                      <span>Hội thảo</span>
-                    </>
-                  )}
+              </div>
+            )}
+          </div>
+          <div className="pt-1">
+            <div className={`group flex min-h-11 w-full items-center rounded-xl text-sm font-medium transition-all ${isNetworkingActive ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}>
+              <button type="button" onClick={() => { setNetworkingOpen(true); navigate("/admin/networking-events"); onClose(); }} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left">
+                <Users size={19} className={isNetworkingActive ? "text-green-400" : "text-slate-400 group-hover:text-green-400"} />
+                <span className="truncate">Sự kiện kết nối</span>
+              </button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setNetworkingOpen((previous) => !previous); }} aria-label={networkingOpen ? "Thu gọn menu Sự kiện kết nối" : "Mở menu Sự kiện kết nối"} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-700 hover:text-white">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`h-4 w-4 transition-transform duration-200 ${networkingOpen ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+            </div>
+            {networkingOpen && (
+              <div className="relative ml-5 mt-1 space-y-1 pl-4">
+                <div className="absolute bottom-2 left-0 top-2 w-px bg-slate-700" />
+                <NavLink to="/admin/startup-connection-day/seminars" onClick={onClose} className={({ isActive }) => `group relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${isActive ? "bg-green-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                  {({ isActive }) => <><span className="absolute -left-4 top-1/2 h-px w-4 bg-slate-700" /><CalendarDays size={17} className={isActive ? "text-white" : "text-slate-500 group-hover:text-green-400"} /><span>Hội thảo</span></>}
                 </NavLink>
               </div>
             )}
           </div>
-          <NavLink
-            to="/admin/networking-events"
-            onClick={onClose}
-            className={({ isActive }) =>
-              `
-      group
-      flex
-      min-h-11
-      items-center
-      gap-3
-      rounded-xl
-      px-3
-      py-2.5
-      text-sm
-      font-medium
-      transition-all
-      ${
-        isActive
-          ? "bg-green-600 text-white"
-          : "text-slate-300 hover:bg-slate-800 hover:text-white"
-      }
-    `
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Users
-                  size={19}
-                  className={
-                    isActive
-                      ? "text-white"
-                      : "text-slate-400 group-hover:text-green-400"
-                  }
-                />
-
-                <span>Sự kiện kết nối</span>
-              </>
-            )}
-          </NavLink>
           {/* =====================================================
     CHƯƠNG TRÌNH ƯƠM TẠO
 ===================================================== */}

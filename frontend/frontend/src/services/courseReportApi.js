@@ -25,6 +25,13 @@ const courseReportApi = {
     );
   },
 
+  getProgramOverview(programId, params = {}) {
+    return apiClient.get(
+      `${COURSE_REPORT_PATH}/programs/${programId}/overview`,
+      { params },
+    );
+  },
+
   getOpeningsByCourse(courseId, params) {
     return apiClient.get(`${COURSE_REPORT_PATH}/courses/${courseId}/openings`, {
       params,

@@ -35,6 +35,8 @@ router.get(
   TrainingCourseController.exportExcel,
 );
 
+router.get("/years", TrainingCourseController.years);
+
 // =========================================================
 // PUBLIC DETAIL
 // =========================================================

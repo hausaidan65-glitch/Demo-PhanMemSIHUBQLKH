@@ -1,6 +1,8 @@
 // =====================================================
 // GOOGLE FORM AUTO MAPPER
 // =====================================================
+
+import { getModuleFieldConfig } from "../../../config/moduleFieldRegistry.js";
 //
 // Nhiệm vụ:
 // - Nhận tên cột từ Google Form.
@@ -35,22 +37,84 @@ function includesAny(text, keywords) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
+const EXHIBITION_RESULT_FIELDS = [
+  ["exhibition_product_quantity", [
+    "so san pham trung bay trien lam",
+    "so luong san pham trung bay trien lam",
+    "so san pham trung bay trien lam luu y ghi so luong",
+  ]],
+  ["sold_or_ordered_quantity", [
+    "so luong san pham da ban duoc dat hang trong dot trien lam nay",
+    "so luong san pham da ban da duoc dat hang trong dot trien lam nay",
+  ]],
+  ["visitor_count", [
+    "so luong khach ghe tham gian hang",
+    "so luong khach ghe tham gian hang vui long ghi ro luot vi du 50 luot",
+  ]],
+  ["b2b_matching_count", [
+    "so luot b2b matching",
+    "so luot b2b matching ket noi voi khach hang doi tac tiem nang",
+  ]],
+  ["public_sector_connection_count", [
+    "so luot ket noi voi khu vuc cong",
+    "so luot ket noi voi khu vuc cong benh vien phuong xa",
+  ]],
+  ["highlight_impression", [
+    "diem dac biet an tuong cua don vi khi tham gia chuong trinh la gi",
+    "diem dac biet an tuong cua don vi khi tham gia chuong trinh data ai 2026 la gi",
+  ]],
+  ["want_to_join_again", [
+    "neu co su kien tuong tu don vi co muon tiep tuc tham gia khong",
+    "neu co su kien tuong tu don vi cua minh co muon tiep tuc tham gia khong",
+  ]],
+];
+
+function detectExhibitionResultField(header) {
+  const text = normalizeHeader(header)
+    .replace(/^[\d\s.)-]+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return EXHIBITION_RESULT_FIELDS.find(([, aliases]) =>
+    aliases.includes(text),
+  )?.[0];
+}
+
 // =====================================================
 // DETECT
 // =====================================================
 
-export function detectGoogleFormField(header) {
+export function detectGoogleFormField(header, targetType = "") {
   const text = normalizeHeader(header);
 
   if (!text) {
     return "__EXTRA__";
   }
 
+  const moduleCode = String(targetType).toUpperCase();
+  if (moduleCode === "NETWORKING" && text === "linh vuc") {
+    return "project_field";
+  }
+  if (moduleCode === "EXHIBITION") {
+    const exhibitionResultField = detectExhibitionResultField(header);
+    if (exhibitionResultField) return exhibitionResultField;
+  }
+
+  const registryFields = ["EXHIBITION", "NETWORKING"].includes(moduleCode)
+    ? getModuleFieldConfig(moduleCode)?.importFields || []
+    : [];
+  const registryMatch = registryFields.find((field) =>
+    (field.aliases || []).some((alias) => normalizeHeader(alias) === text),
+  );
+  if (registryMatch) return registryMatch.key;
+
   // ---------------------------------------------------
   // TIMESTAMP
   // ---------------------------------------------------
 
   if (
+    text === "linh vuc" ||
     includesAny(text, [
       "dau thoi gian",
       "timestamp",
@@ -66,6 +130,7 @@ export function detectGoogleFormField(header) {
   // ---------------------------------------------------
 
   if (
+    text === "giai doan" ||
     includesAny(text, [
       "ho va ten",
       "ho ten",
@@ -109,6 +174,7 @@ export function detectGoogleFormField(header) {
   // ---------------------------------------------------
 
   if (
+    text === "cau hoi btc" ||
     includesAny(text, [
       "cam ket tham gia",
       "tham gia day du 100%",
@@ -129,16 +195,16 @@ export function detectGoogleFormField(header) {
   // Vì Google Form có rất nhiều câu hỏi chứa các từ này.
   // ---------------------------------------------------
 
-  if (
-    includesAny(text, [
-      "don vi cong tac",
-      "ten don vi cong tac",
-      "ten doanh nghiep",
-      "ten cong ty",
-      "organization",
-      "company name",
-    ])
-  ) {
+  if (includesAny(text, [
+    "don vi cong tac",
+    "doanh nghiep/don vi dang cong tac",
+    "doanh nghiep don vi dang cong tac",
+    "ten don vi cong tac",
+    "ten doanh nghiep",
+    "ten cong ty",
+    "organization",
+    "company name",
+  ]) || text === "don vi") {
     return "organization";
   }
 
@@ -178,9 +244,51 @@ export function detectGoogleFormField(header) {
   // ---------------------------------------------------
 
   if (
+    includesAny(text, [
+      "du an cua ban co nu la founder co founder",
+      "du an cua ban co nu la founder, co-founder",
+      "co nu la founder",
+      "co nu founder co founder",
+      "nu founder co founder",
+      "nu sang lap",
+    ])
+  ) {
+    return "female_founder";
+  }
+
+  if (
     includesAny(text, ["co du an", "da co du an", "ban co du an", "co y tuong"])
   ) {
     return "has_project";
+  }
+
+  if (includesAny(text, ["ten du an", "ten y tuong", "project name"])) {
+    return "project_name";
+  }
+
+  if (
+    includesAny(text, [
+      "mo ta ngan ve y tuong du an",
+      "mo ta ngan ve y tuong/du an",
+      "mo ta ngan y tuong du an",
+      "mo ta du an",
+      "mo ta y tuong",
+      "mo ta san pham dich vu",
+    ])
+  ) {
+    return "project_description";
+  }
+
+  if (
+    includesAny(text, [
+      "co bao nhieu nhan su",
+      "bao nhieu nhan su",
+      "quy mo nhan su",
+      "quy mo doi ngu",
+      "so luong thanh vien",
+    ])
+  ) {
+    return "team_size";
   }
 
   // ---------------------------------------------------
@@ -194,6 +302,8 @@ export function detectGoogleFormField(header) {
       "linh vuc y tuong",
       "du an/ y tuong thuoc linh vuc",
       "du an/y tuong thuoc linh vuc",
+      "du an/y tuong cua ban thuoc linh vuc",
+      "du an y tuong cua ban thuoc linh vuc",
       "project field",
     ])
   ) {
@@ -209,10 +319,12 @@ export function detectGoogleFormField(header) {
       "giai doan startup",
       "giai doan du an",
       "giai doan khoi nghiep",
+      "startup/du an ban o giai doan",
+      "du an ban o giai doan",
       "startup stage",
     ])
   ) {
-    return "startup_stage";
+    return moduleCode === "NETWORKING" ? "startup_stage" : "project_stage";
   }
 
   // ---------------------------------------------------
@@ -227,7 +339,9 @@ export function detectGoogleFormField(header) {
       "trang thai tuyen chon",
     ])
   ) {
-    return "program_selection_status";
+    return moduleCode === "NETWORKING"
+      ? "program_selection_status"
+      : "nq20_status";
   }
 
   // ---------------------------------------------------

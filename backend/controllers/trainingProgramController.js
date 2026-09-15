@@ -1,4 +1,9 @@
 const TrainingProgramModel = require("../models/trainingProgramModel");
+const { parseTrainingProgramYear } = require("../utils/trainingProgramYear");
+
+function yearError(res, parsedYear) {
+  return res.status(400).json({ success: false, message: parsedYear.error });
+}
 
 class TrainingProgramController {
   static async getTree(req, res) {
@@ -24,7 +29,10 @@ class TrainingProgramController {
   }
   static async getAll(req, res) {
     try {
-      const data = await TrainingProgramModel.getAll();
+      const parsedYear = parseTrainingProgramYear(req.query);
+      if (parsedYear.error) return yearError(res, parsedYear);
+      const query = parsedYear.value === null ? {} : { year: parsedYear.value };
+      const data = await TrainingProgramModel.getAll(query);
 
       return res.json({
         success: true,
@@ -71,6 +79,8 @@ class TrainingProgramController {
       const programName = String(req.body.program_name || "").trim();
       const description = String(req.body.description || "").trim();
       const status = req.body.status || "ACTIVE";
+      const parsedYear = parseTrainingProgramYear(req.body);
+      if (parsedYear.error) return yearError(res, parsedYear);
 
       if (!programName) {
         return res.status(400).json({
@@ -98,6 +108,7 @@ class TrainingProgramController {
       const id = await TrainingProgramModel.create({
         program_name: programName,
         description,
+        year: parsedYear.value,
         status,
       });
 
@@ -124,6 +135,8 @@ class TrainingProgramController {
       const programName = String(req.body.program_name || "").trim();
       const description = String(req.body.description || "").trim();
       const status = req.body.status || "ACTIVE";
+      const parsedYear = parseTrainingProgramYear(req.body);
+      if (parsedYear.error) return yearError(res, parsedYear);
 
       const existed = await TrainingProgramModel.findById(id);
 
@@ -160,6 +173,8 @@ class TrainingProgramController {
       await TrainingProgramModel.update(id, {
         program_name: programName,
         description,
+        year_provided: parsedYear.provided,
+        year: parsedYear.value,
         status,
       });
 

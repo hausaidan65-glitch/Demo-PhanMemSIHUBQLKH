@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import axios from "axios";
-import GoogleFormImportPanel from "./components/google-form/GoogleFormImportPanel";
+import GoogleFormImportPanel from "./components/google-form/GoogleFormBatchImportPanel";
+import UnifiedImportPreviewPanel from "./components/import-preview/UnifiedImportPreviewPanel";
 import {
   AlertCircle,
   AlertTriangle,
@@ -170,7 +171,7 @@ function isEventItem(item) {
 function getImportTypeLabel(item) {
   switch (item?.importType) {
     case "TRAINING":
-      return "Khóa đào tạo";
+      return "Nhiệm vụ đào tạo";
 
     case "STARTUP_EXHIBITION":
       return "Triển lãm";
@@ -244,7 +245,7 @@ function AdminImportClassStudent() {
   // EXHIBITION | NETWORKING
   const [existingExhibitions, setExistingExhibitions] = useState([]);
   const [exhibitionLoading, setExhibitionLoading] = useState(false);
-  const [importSource, setImportSource] = useState("SIHUB_EXCEL");
+  const [importSource, setImportSource] = useState("GOOGLE_FORM");
   const [exhibitionChoice, setExhibitionChoice] = useState({
     mode: "EXISTING", // EXISTING | NEW
     existingId: "",
@@ -462,8 +463,8 @@ function AdminImportClassStudent() {
   // =====================================================
   // TẢI DANH SÁCH KHÓA ĐÀO TẠO
   //
-  // Dùng khi lớp học trong Excel chưa xác định được
-  // thuộc Khóa đào tạo nào.
+  // Dùng khi khóa đào tạo trong Excel chưa xác định được
+  // thuộc Nhiệm vụ đào tạo nào.
   // =====================================================
   const fetchTrainingCoursesForImport = async () => {
     try {
@@ -474,14 +475,14 @@ function AdminImportClassStudent() {
       setTrainingCourses(response.data?.data || []);
     } catch (error) {
       console.error(
-        "Lỗi tải danh sách khóa đào tạo:",
+        "Lỗi tải danh sách nhiệm vụ đào tạo:",
         error.response?.data || error,
       );
 
       showNotice(
         "error",
         error.response?.data?.message ||
-          "Không thể tải danh sách Khóa đào tạo.",
+          "Không thể tải danh sách Nhiệm vụ đào tạo.",
       );
 
       setTrainingCourses([]);
@@ -661,7 +662,7 @@ function AdminImportClassStudent() {
       showNotice(
         "success",
         `Đã đọc ${mappedItems.length} sheet dữ liệu: ` +
-          `${trainingCount} khóa/lớp đào tạo, ` +
+          `${trainingCount} sheet đào tạo, ` +
           `${eventCount} sự kiện và ` +
           `${unknownCount} sheet chưa xác định.`,
       );
@@ -858,7 +859,7 @@ function AdminImportClassStudent() {
 
             showNotice(
               "warning",
-              `Lớp học "${result.courseName}" chưa xác định được Khóa đào tạo. Vui lòng kiểm tra trước khi tiếp tục.`,
+              `Khóa đào tạo "${result.courseName}" chưa xác định được Nhiệm vụ đào tạo. Vui lòng kiểm tra trước khi tiếp tục.`,
             );
 
             return;
@@ -870,7 +871,7 @@ function AdminImportClassStudent() {
             importError: null,
           });
         } catch (error) {
-          console.error("Tạo lớp và tiếp tục import lỗi:", error);
+          console.error("Tạo khóa và tiếp tục import lỗi:", error);
 
           const errorData = error.response?.data;
 
@@ -895,7 +896,7 @@ function AdminImportClassStudent() {
               importResult: null,
             });
 
-            // Đóng modal "Tạo lớp và tiếp tục"
+            // Đóng modal "Tạo khóa và tiếp tục"
             setPendingConfirm(null);
 
             showNotice(
@@ -910,12 +911,12 @@ function AdminImportClassStudent() {
           updatePreviewItem(index, {
             importStatus: FILE_STATUS.ERROR,
             importError:
-              errorData?.message || "Không thể tạo lớp học và tiếp tục import.",
+              errorData?.message || "Không thể tạo khóa đào tạo và tiếp tục import.",
           });
 
           showNotice(
             "error",
-            errorData?.message || "Không thể tạo lớp học và tiếp tục import.",
+            errorData?.message || "Không thể tạo khóa đào tạo và tiếp tục import.",
           );
         } finally {
           setCreatingCourse(false);
@@ -1354,7 +1355,7 @@ function AdminImportClassStudent() {
   // HOẶC
   // 2. Tạo khóa mới
   //
-  // Sau đó mới tạo lớp và tiếp tục import.
+  // Sau đó mới tạo khóa và tiếp tục import.
   // =====================================================
   const handleCreateCourseAndContinue = async () => {
     if (!pendingConfirm) {
@@ -1377,7 +1378,7 @@ function AdminImportClassStudent() {
         if (!trainingCourseChoice.existingId) {
           showNotice(
             "warning",
-            "Vui lòng chọn một Khóa đào tạo trước khi tiếp tục.",
+            "Vui lòng chọn một Nhiệm vụ đào tạo trước khi tiếp tục.",
           );
 
           return;
@@ -1394,7 +1395,7 @@ function AdminImportClassStudent() {
         const newName = trainingCourseChoice.newName.trim();
 
         if (!newName) {
-          showNotice("warning", "Vui lòng nhập tên Khóa đào tạo mới.");
+          showNotice("warning", "Vui lòng nhập tên Nhiệm vụ đào tạo mới.");
 
           return;
         }
@@ -1418,7 +1419,7 @@ function AdminImportClassStudent() {
 
         if (!trainingCourseId) {
           throw new Error(
-            "Đã tạo Khóa đào tạo nhưng không nhận được mã Khóa đào tạo.",
+            "Đã tạo Nhiệm vụ đào tạo nhưng không nhận được mã Nhiệm vụ đào tạo.",
           );
         }
       }
@@ -1443,7 +1444,7 @@ function AdminImportClassStudent() {
           fileData: {
             ...fileData,
 
-            // Đây mới là Khóa đào tạo mà Admin vừa chọn
+            // Đây mới là Nhiệm vụ đào tạo mà Admin vừa chọn
             trainingCourseId: trainingCourseId,
             training_course_id: trainingCourseId,
           },
@@ -1576,7 +1577,7 @@ function AdminImportClassStudent() {
               </h1>
 
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                Hệ thống tự động đọc Khóa đào tạo, Lớp học, Triển lãm, Hội thảo,
+                Hệ thống tự động đọc Nhiệm vụ đào tạo, Khóa đào tạo, Triển lãm, Hội thảo,
                 Sự kiện kết nối và danh sách người tham gia. Những dữ liệu chưa
                 rõ hoặc có lỗi sẽ được hiển thị để Admin kiểm tra và chỉnh sửa
                 trước khi import.
@@ -1594,10 +1595,11 @@ function AdminImportClassStudent() {
             </button>
           </div>
         </section>
+        {importSource === "SIHUB_EXCEL" && <UnifiedImportPreviewPanel />}
         {/* =====================================================
     CHỌN NGUỒN IMPORT
 ===================================================== */}
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {importSource === "SOURCE_SELECTOR_HIDDEN" && <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
               Chọn nguồn dữ liệu
@@ -1668,7 +1670,7 @@ function AdminImportClassStudent() {
               </div>
             </button>
           </div>
-        </section>
+        </section>}
         {/* THÔNG BÁO */}
         {notice.message && (
           <section
@@ -1746,7 +1748,7 @@ function AdminImportClassStudent() {
                 <div className="mt-5 space-y-4 text-sm text-slate-600">
                   {[
                     "Chọn một hoặc nhiều file Excel dữ liệu SIHUB.",
-                    "Hệ thống tự nhận diện Khóa đào tạo, Triển lãm, Hội thảo và Sự kiện kết nối.",
+                    "Hệ thống tự nhận diện Nhiệm vụ đào tạo, Triển lãm, Hội thảo và Sự kiện kết nối.",
                     "Kiểm tra người tham gia, dữ liệu lỗi, trùng hoặc xung đột.",
                     "Admin chỉnh sửa hoặc xác nhận những dữ liệu chưa chắc chắn trước khi import.",
                   ].map((text, index) => (
@@ -2030,7 +2032,7 @@ function AdminImportClassStudent() {
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Kiểm tra kỹ khóa đào tạo, lớp học, đợt tổ chức và số lượng học
+                  Kiểm tra kỹ nhiệm vụ đào tạo, khóa đào tạo, đợt tổ chức và số lượng học
                   viên trước khi import.
                 </p>
               </div>
@@ -2118,7 +2120,7 @@ function AdminImportClassStudent() {
                           {isTrainingItem(item) ? (
                             <>
                               <InfoBox
-                                label="Khóa đào tạo"
+                                label="Nhiệm vụ đào tạo"
                                 value={cleanDisplayText(
                                   item.class?.programName,
                                   [/^Thuộc\s+/i],
@@ -2126,10 +2128,10 @@ function AdminImportClassStudent() {
                               />
 
                               <InfoBox
-                                label="Lớp học"
+                                label="Khóa đào tạo"
                                 value={
                                   item.class?.className ||
-                                  "Chưa xác định lớp học"
+                                  "Chưa xác định khóa đào tạo"
                                 }
                               />
 
@@ -2584,12 +2586,12 @@ function AdminImportClassStudent() {
 
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
-                    Chưa xác định Khóa đào tạo
+                    Chưa xác định Nhiệm vụ đào tạo
                   </h2>
 
                   <p className="mt-1 text-sm leading-6 text-slate-500">
-                    Hệ thống đã đọc được lớp học nhưng chưa biết lớp này thuộc
-                    Khóa đào tạo nào.
+                    Hệ thống đã đọc được Khóa đào tạo nhưng chưa biết khóa này thuộc
+                    Nhiệm vụ đào tạo nào.
                   </p>
                 </div>
               </div>
@@ -2608,13 +2610,13 @@ function AdminImportClassStudent() {
               {/* LỚP HỌC ĐÃ ĐỌC ĐƯỢC */}
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
-                  Lớp học trong file Excel
+                  Khóa đào tạo trong file Excel
                 </p>
 
                 <p className="mt-2 text-lg font-bold leading-7 text-slate-900">
                   {pendingConfirm.result?.courseName ||
                     pendingConfirm.fileData?.class?.className ||
-                    "Chưa đọc được tên lớp"}
+                    "Chưa đọc được tên Khóa đào tạo"}
                 </p>
               </div>
 
@@ -2623,7 +2625,7 @@ function AdminImportClassStudent() {
                 <p className="font-bold text-slate-800">Bạn muốn làm gì?</p>
 
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Nếu Khóa đào tạo đã có trong hệ thống, hãy chọn Khóa đào tạo
+                  Nếu Nhiệm vụ đào tạo đã có trong hệ thống, hãy chọn Nhiệm vụ đào tạo
                   đó. Nếu chưa có, bạn có thể tạo mới ngay tại đây.
                 </p>
               </div>
@@ -2655,11 +2657,11 @@ function AdminImportClassStudent() {
 
                   <div className="flex-1">
                     <p className="font-bold text-slate-900">
-                      Chọn Khóa đào tạo đã có
+                      Chọn Nhiệm vụ đào tạo đã có
                     </p>
 
                     <p className="mt-1 text-sm text-slate-500">
-                      Dùng khi Khóa đào tạo đã được tạo trong hệ thống.
+                      Dùng khi Nhiệm vụ đào tạo đã được tạo trong hệ thống.
                     </p>
                   </div>
                 </div>
@@ -2683,13 +2685,13 @@ function AdminImportClassStudent() {
                         }
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
                       >
-                        <option value="">-- Chọn Khóa đào tạo --</option>
+                        <option value="">-- Chọn Nhiệm vụ đào tạo --</option>
 
                         {trainingCourses.map((course) => (
                           <option key={course.id} value={course.id}>
                             {course.training_course_name ||
                               course.course_name ||
-                              `Khóa đào tạo #${course.id}`}
+                              `Nhiệm vụ đào tạo #${course.id}`}
                           </option>
                         ))}
                       </select>
@@ -2697,8 +2699,8 @@ function AdminImportClassStudent() {
 
                     {!trainingCourseLoading && trainingCourses.length === 0 && (
                       <p className="mt-2 text-sm font-medium text-amber-700">
-                        Hiện chưa có Khóa đào tạo nào trong hệ thống. Bạn có thể
-                        chọn “Tạo Khóa đào tạo mới”.
+                        Hiện chưa có Nhiệm vụ đào tạo nào trong hệ thống. Bạn có thể
+                        chọn “Tạo Nhiệm vụ đào tạo mới”.
                       </p>
                     )}
                   </div>
@@ -2732,11 +2734,11 @@ function AdminImportClassStudent() {
 
                   <div className="flex-1">
                     <p className="font-bold text-slate-900">
-                      Tạo Khóa đào tạo mới
+                      Tạo Nhiệm vụ đào tạo mới
                     </p>
 
                     <p className="mt-1 text-sm text-slate-500">
-                      Dùng khi Khóa đào tạo này chưa có trong hệ thống.
+                      Dùng khi Nhiệm vụ đào tạo này chưa có trong hệ thống.
                     </p>
                   </div>
                 </div>
@@ -2745,7 +2747,7 @@ function AdminImportClassStudent() {
                   <div className="mt-4 space-y-4">
                     <div>
                       <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Tên Khóa đào tạo
+                        Tên Nhiệm vụ đào tạo
                         <span className="text-red-500"> *</span>
                       </label>
 
@@ -2758,7 +2760,7 @@ function AdminImportClassStudent() {
                             newName: event.target.value,
                           }))
                         }
-                        placeholder="Nhập tên Khóa đào tạo..."
+                        placeholder="Nhập tên Nhiệm vụ đào tạo..."
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                       />
                     </div>
@@ -2792,7 +2794,7 @@ function AdminImportClassStudent() {
               {/* GIẢI THÍCH CUỐI */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-sm leading-6 text-slate-600">
-                  Sau khi xác nhận, hệ thống sẽ tạo lớp học và tiếp tục xử lý
+                  Sau khi xác nhận, hệ thống sẽ tạo khóa đào tạo và tiếp tục xử lý
                   <strong>
                     {" "}
                     {pendingConfirm.fileData?.totalStudents || 0} học viên

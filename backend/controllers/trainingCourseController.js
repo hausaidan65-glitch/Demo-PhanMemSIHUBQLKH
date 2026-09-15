@@ -1,5 +1,58 @@
 const TrainingCourseModel = require("../models/trainingCourseModel");
+const MissionModel = require("../models/missionModel");
 const ExcelJS = require("exceljs");
+const { parseTrainingProgramYear } = require("../utils/trainingProgramYear");
+
+function yearError(res, parsedYear) {
+  return res.status(400).json({
+    success: false,
+    message: parsedYear.error,
+  });
+}
+
+function parseMissionId(body = {}) {
+  if (Object.prototype.hasOwnProperty.call(body, "mission_source")) {
+    return { error: "mission_source không được chấp nhận trên khóa đào tạo." };
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, "mission_id") || body.mission_id === undefined) {
+    return { provided: false, value: null };
+  }
+  if (body.mission_id === null) return { provided: true, value: null };
+  if (typeof body.mission_id !== "string" && typeof body.mission_id !== "number") {
+    return { error: "mission_id không hợp lệ." };
+  }
+  const rawValue = String(body.mission_id).trim();
+  if (!rawValue) return { provided: true, value: null };
+  if (!/^[1-9]\d*$/.test(rawValue)) return { error: "mission_id không hợp lệ." };
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value)) return { error: "mission_id không hợp lệ." };
+  return { provided: true, value };
+}
+
+async function validateMissionAssignment(parsed, existingMissionId = null) {
+  if (!parsed.provided || parsed.value === null) return null;
+  if (Number(existingMissionId) === parsed.value) return null;
+  const mission = await MissionModel.findById(parsed.value);
+  if (!mission) {
+    return { status: 400, code: "INVALID_MISSION_ID", message: "Nhiệm vụ không tồn tại." };
+  }
+  if (mission.status !== "ACTIVE") {
+    return {
+      status: 409,
+      code: "INACTIVE_MISSION",
+      message: "Không thể gán nhiệm vụ đã ngừng hoạt động.",
+    };
+  }
+  return null;
+}
+
+function missionError(res, error) {
+  return res.status(error.status || 400).json({
+    success: false,
+    code: error.code || "INVALID_MISSION_ID",
+    message: error.message || error.error,
+  });
+}
 function getStatusLabel(status) {
   const labels = {
     ACTIVE: "Đang hoạt động",
@@ -9,12 +62,30 @@ function getStatusLabel(status) {
   return labels[status] || status || "";
 }
 class TrainingCourseController {
+  static async years(req, res) {
+    try {
+      const data = await TrainingCourseModel.getDistinctYears();
+      return res.status(200).json({ success: true, data });
+    } catch (error) {
+      console.error("Lá»—i láº¥y danh sÃ¡ch nÄƒm khÃ³a Ä‘Ã o táº¡o:", error);
+      return res.status(500).json({
+        success: false,
+        message: "KhÃ´ng thá»ƒ táº£i danh sÃ¡ch nÄƒm khÃ³a Ä‘Ã o táº¡o.",
+      });
+    }
+  }
+
   // =========================================================
   // GET /api/training-courses
   // =========================================================
   static async index(req, res) {
     try {
-      const data = await TrainingCourseModel.getAll(req.query);
+      const parsedYear = parseTrainingProgramYear(req.query);
+      if (parsedYear.error) return yearError(res, parsedYear);
+      const query = { ...req.query };
+      if (parsedYear.value === null) delete query.year;
+      else query.year = parsedYear.value;
+      const data = await TrainingCourseModel.getAll(query);
 
       return res.status(200).json({
         success: true,
@@ -38,7 +109,12 @@ class TrainingCourseController {
   // =========================================================
   static async exportExcel(req, res) {
     try {
-      const data = await TrainingCourseModel.getExportData(req.query);
+      const parsedYear = parseTrainingProgramYear(req.query);
+      if (parsedYear.error) return yearError(res, parsedYear);
+      const query = { ...req.query };
+      if (parsedYear.value === null) delete query.year;
+      else query.year = parsedYear.value;
+      const data = await TrainingCourseModel.getExportData(query);
 
       if (!data.length) {
         return res.status(404).json({
@@ -64,6 +140,11 @@ class TrainingCourseController {
           header: "Tên khóa đào tạo",
           key: "training_course_name",
           width: 50,
+        },
+        {
+          header: "Năm",
+          key: "year",
+          width: 12,
         },
         {
           header: "Mô tả",
@@ -102,6 +183,8 @@ class TrainingCourseController {
           stt: index + 1,
 
           training_course_name: item.training_course_name || "",
+
+          year: item.year,
 
           description: item.description || "",
 
@@ -253,6 +336,13 @@ class TrainingCourseController {
   // =========================================================
   static async store(req, res) {
     try {
+      const parsedMissionId = parseMissionId(req.body);
+      if (parsedMissionId.error) return missionError(res, parsedMissionId);
+      const parsedYear = parseTrainingProgramYear(req.body);
+      if (parsedYear.error) return yearError(res, parsedYear);
+      const assignmentError = await validateMissionAssignment(parsedMissionId);
+      if (assignmentError) return missionError(res, assignmentError);
+
       const trainingCourseName = String(
         req.body.training_course_name || "",
       ).trim();
@@ -315,6 +405,10 @@ class TrainingCourseController {
 
         description,
 
+        year: parsedYear.value,
+
+        mission_id: parsedMissionId.value,
+
         status,
       });
 
@@ -362,6 +456,16 @@ class TrainingCourseController {
           message: "Không tìm thấy khóa đào tạo.",
         });
       }
+
+      const parsedMissionId = parseMissionId(req.body);
+      if (parsedMissionId.error) return missionError(res, parsedMissionId);
+      const parsedYear = parseTrainingProgramYear(req.body);
+      if (parsedYear.error) return yearError(res, parsedYear);
+      const assignmentError = await validateMissionAssignment(
+        parsedMissionId,
+        existed.mission_id,
+      );
+      if (assignmentError) return missionError(res, assignmentError);
 
       const trainingCourseName = String(
         req.body.training_course_name || "",
@@ -426,6 +530,12 @@ class TrainingCourseController {
         training_course_name: trainingCourseName,
 
         description,
+
+        year_provided: parsedYear.provided,
+        year: parsedYear.value,
+
+        mission_id_provided: parsedMissionId.provided,
+        mission_id: parsedMissionId.value,
 
         status,
       });
@@ -512,5 +622,11 @@ class TrainingCourseController {
     }
   }
 }
+
+TrainingCourseController._test = {
+  parseMissionId,
+  validateMissionAssignment,
+  parseTrainingProgramYear,
+};
 
 module.exports = TrainingCourseController;
