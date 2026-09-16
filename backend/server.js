@@ -26,6 +26,7 @@ const incubationProfileRoutes = require("./routes/incubationProfileRoutes");
 const incubationProgramRoutes = require("./routes/incubationProgramRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const exhibitionSurveyRoutes = require("./routes/exhibitionSurveyRoutes");
+const courseSurveyRoutes = require("./routes/courseSurveyRoutes");
 const incubationImportRoutes = require("./routes/incubationImportRoutes");
 const adminActivityLogRoutes = require("./routes/adminActivityLogRoutes");
 const eventImageRoutes = require("./routes/eventImageRoutes");
@@ -39,7 +40,7 @@ const openingStudentImportRoutes = require("./routes/openingStudentImportRoutes"
 const missionRoutes = require("./routes/missionRoutes");
 const app = express();
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = Number(process.env.PORT) || 5001;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
 /*
@@ -52,7 +53,11 @@ app.set("trust proxy", 1);
  * Khi frontend và backend cùng domain, CORS gần như không còn là vấn đề,
  * nhưng vẫn giữ cấu hình này để chạy local.
  */
-const allowedOrigins = ["http://localhost:5173", FRONTEND_URL].filter(Boolean);
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  FRONTEND_URL,
+].filter(Boolean);
 
 app.use(
   cors({
@@ -72,6 +77,8 @@ app.use(
       return callback(new Error(`Origin không được phép: ${origin}`));
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
@@ -125,6 +132,7 @@ app.use("/api/incubation-profiles", incubationProfileRoutes);
 app.use("/api/incubation-programs", incubationProgramRoutes);
 app.use("/api/admins", adminRoutes);
 app.use("/api/exhibition-surveys", exhibitionSurveyRoutes);
+app.use("/api/course-surveys", courseSurveyRoutes);
 app.use("/api/incubation-import", incubationImportRoutes);
 app.use("/api/admin-activity-logs", adminActivityLogRoutes);
 app.use("/api/event-images", eventImageRoutes);
@@ -205,6 +213,17 @@ syncCourseClassStatus();
 
 // Sau đó mỗi 5 phút chạy lại
 setInterval(syncCourseClassStatus, STATUS_SYNC_INTERVAL);
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`SIHUB Backend chạy tại cổng ${PORT}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(
+      `Cổng ${PORT} đang bị chiếm. Trên macOS, cổng 5000 thường thuộc AirPlay Receiver.`,
+    );
+  } else {
+    console.error("Không thể khởi động server:", error);
+  }
+  process.exit(1);
 });

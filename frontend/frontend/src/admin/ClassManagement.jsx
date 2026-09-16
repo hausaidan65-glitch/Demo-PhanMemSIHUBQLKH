@@ -9,6 +9,7 @@ import {
   Copy,
   Eye,
   Loader2,
+  Link2,
   ScanLine,
   MapPin,
   Pencil,
@@ -22,7 +23,7 @@ import {
 } from "lucide-react";
 import { PUBLIC_APP_URL } from "../config/api";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = "http://localhost:5001/api";
 const PUBLIC_REGISTRATION_BASE_URL = PUBLIC_APP_URL.replace(/\/$/, "");
 const MISSION_SOURCE_LABELS = {
   A: "Nhiệm vụ của Sở Khoa học và Công nghệ",
@@ -31,6 +32,13 @@ const MISSION_SOURCE_LABELS = {
 
 function getOpeningRegistrationUrl(openingId) {
   return `${PUBLIC_REGISTRATION_BASE_URL}/register/${openingId}`;
+}
+function getOpeningSurveyPath(opening) {
+  if (!opening?.id || !opening?.survey_token) {
+    return "";
+  }
+
+  return `/khao-sat/${opening.id}/${opening.survey_token}`;
 }
 const EMPTY_OPENING_FORM = {
   class_code: "",
@@ -377,9 +385,9 @@ function ClassManagement() {
   );
   const fetchFilterOptions = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/classes/filter-options`);
+      const response = await axios.get(`${API_URL}/training-courses/years`);
 
-      setAvailableYears(response.data.data?.years || []);
+      setAvailableYears(Array.isArray(response.data?.data) ? response.data.data : []);
     } catch (error) {
       console.error("Lỗi tải năm lọc:", error.response?.data || error);
 
@@ -390,7 +398,9 @@ function ClassManagement() {
     try {
       setTrainingCourseLoading(true);
 
-      const response = await axios.get(`${API_URL}/training-courses`);
+      const response = await axios.get(`${API_URL}/training-courses`, {
+        params: yearFilter ? { year: yearFilter } : {},
+      });
 
       setTrainingCourses(response.data.data || []);
     } catch (error) {
@@ -406,7 +416,7 @@ function ClassManagement() {
     } finally {
       setTrainingCourseLoading(false);
     }
-  }, []);
+  }, [yearFilter]);
   const fetchClasses = useCallback(async () => {
     try {
       setLoading(true);
@@ -815,6 +825,16 @@ function ClassManagement() {
       console.error("Không thể sao chép link đăng ký:", error);
       alert("Không thể sao chép link đăng ký. Vui lòng thử lại.");
     }
+  };
+  const handleOpenSurvey = (opening) => {
+    const surveyPath = getOpeningSurveyPath(opening);
+
+    if (!surveyPath) {
+      alert("Không xác định được liên kết khảo sát.");
+      return;
+    }
+
+    navigate(surveyPath);
   };
   const handleViewOpeningStudents = async (opening) => {
     try {
@@ -1334,7 +1354,7 @@ function ClassManagement() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-[1360px] space-y-5">
       {/* HEADER */}
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -1427,17 +1447,10 @@ function ClassManagement() {
 
       {/* SUMMARY */}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Tổng khóa đào tạo" value={classes.length} />
-
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
-          label="Đang mở"
-          value={
-            classes.filter(
-              (item) => (item.effective_status || item.status) === "OPEN",
-            ).length
-          }
-          valueClass="text-green-600"
+          label="Tổng nhiệm vụ khóa đào tạo"
+          value={classes.length}
         />
 
         <SummaryCard
@@ -1459,10 +1472,10 @@ function ClassManagement() {
       {/* FILTER */}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-2.5 xl:grid-cols-[minmax(240px,1fr)_auto_200px_140px_120px_120px_220px]">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-12">
           {/* Search */}
 
-          <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-4">
+          <div className="order-5 flex items-center rounded-xl border border-slate-200 bg-slate-50 px-4 lg:col-span-5">
             <Search size={18} className="text-slate-400" />
 
             <input
@@ -1481,12 +1494,12 @@ function ClassManagement() {
               setAppliedKeyword(keyword.trim());
               setPage(1);
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-700"
+            className="order-6 inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-700 lg:col-span-2"
           >
             <Search size={18} />
             Tìm kiếm
           </button>
-          {/* Nhiệm vụ đào tạo */}
+          {/* Nhiệm vụ khóa đào tạo */}
 
           <select
             value={trainingCourseFilter}
@@ -1494,9 +1507,9 @@ function ClassManagement() {
               setTrainingCourseFilter(event.target.value);
               setPage(1);
             }}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
+            className="order-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100 lg:col-span-6"
           >
-            <option value="">Tất cả nhiệm vụ đào tạo</option>
+            <option value="">Tất cả Nhiệm vụ khóa đào tạo</option>
 
             {trainingCourses.map((trainingCourse) => (
               <option key={trainingCourse.id} value={trainingCourse.id}>
@@ -1505,30 +1518,16 @@ function ClassManagement() {
             ))}
           </select>
 
-          {/* Trạng thái */}
-
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              setStatusFilter(event.target.value);
-              setPage(1);
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
-          >
-            <option value="">Tất cả trạng thái</option>
-            <option value="OPEN">Đang mở</option>
-            <option value="CLOSED">Đã đóng</option>
-          </select>
-
           {/* Năm */}
 
           <select
             value={yearFilter}
             onChange={(event) => {
               setYearFilter(event.target.value);
+              setTrainingCourseFilter("");
               setPage(1);
             }}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
+            className="order-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100 lg:col-span-3"
           >
             <option value="">Tất cả năm</option>
 
@@ -1546,7 +1545,7 @@ function ClassManagement() {
               setMonthFilter(event.target.value);
               setPage(1);
             }}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100"
+            className="order-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-100 lg:col-span-3"
           >
             <option value="">Tất cả tháng</option>
 
@@ -1566,7 +1565,8 @@ function ClassManagement() {
               setPage(1);
             }}
             placeholder="Lọc theo nhiệm vụ..."
-            className="
+            className="order-7
+    lg:col-span-5
     rounded-xl
     border
     border-slate-200
@@ -1600,27 +1600,25 @@ function ClassManagement() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] table-fixed">
+          <table className="w-full min-w-[1040px] table-fixed">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                <th className="w-[32%] px-4 py-3">Khóa đào tạo</th>
+                <th className="w-[34%] px-4 py-3">Khóa đào tạo</th>
 
-                <th className="w-[31%] px-4 py-3">Nhiệm vụ đào tạo</th>
+                <th className="w-[32%] px-4 py-3">Nhiệm vụ khóa đào tạo</th>
 
-                <th className="w-[10%] px-3 py-3">Đợt tổ chức</th>
+                <th className="w-[11%] px-3 py-3">Đợt tổ chức</th>
 
-                <th className="w-[8%] px-3 py-3">Học viên</th>
+                <th className="w-[9%] px-3 py-3">Học viên</th>
 
-                <th className="w-[9%] px-3 py-3">Trạng thái</th>
-
-                <th className="w-[10%] px-3 py-3 text-right">Thao tác</th>
+                <th className="w-[14%] px-3 py-3 text-right">Thao tác</th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-16 text-center">
+                  <td colSpan={5} className="px-5 py-16 text-center">
                     <Loader2
                       size={30}
                       className="mx-auto animate-spin text-green-600"
@@ -1634,7 +1632,7 @@ function ClassManagement() {
               ) : filteredClasses.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={5}
                     className="px-5 py-16 text-center text-slate-500"
                   >
                     Chưa có khóa đào tạo phù hợp.
@@ -1648,12 +1646,12 @@ function ClassManagement() {
                   >
                     {/* LỚP HỌC */}
 
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-4">
-                        <div className="h-16 w-24 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-14 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                           {item.thumbnail ? (
                             <img
-                              src={`http://localhost:5000${item.thumbnail}`}
+                              src={`http://localhost:5001${item.thumbnail}`}
                               alt={item.class_name || "Khóa đào tạo"}
                               className="h-full w-full object-cover"
                             />
@@ -1665,7 +1663,7 @@ function ClassManagement() {
                         </div>
 
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-900">
+                          <p className="line-clamp-3 break-words font-semibold text-slate-900">
                             {item.class_name || "Chưa đặt tên"}
                           </p>
 
@@ -1680,15 +1678,15 @@ function ClassManagement() {
 
                     {/* KHÓA ĐÀO TẠO */}
 
-                    <td className="max-w-[360px] px-5 py-4">
-                      <p className="line-clamp-3 text-slate-700">
+                    <td className="max-w-[360px] px-4 py-4">
+                      <p className="line-clamp-3 break-words text-slate-700">
                         {item.training_course_name || "—"}
                       </p>
                     </td>
 
                     {/* ĐỢT TỔ CHỨC */}
 
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
                         {Number(item.total_class_openings || 0)} đợt
                       </span>
@@ -1696,7 +1694,7 @@ function ClassManagement() {
 
                     {/* HỌC VIÊN */}
 
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       <div className="flex items-center gap-2">
                         <UserRound size={17} className="text-slate-400" />
 
@@ -1706,29 +1704,10 @@ function ClassManagement() {
                       </div>
                     </td>
 
-                    {/* STATUS */}
-
-                    <td className="px-5 py-4">
-                      <span
-                        className={`
-          inline-flex
-          rounded-full
-          border
-          px-3
-          py-1
-          text-xs
-          font-semibold
-          ${getStatusClass(item.effective_status || item.status)}
-        `}
-                      >
-                        {getStatusLabel(item.effective_status || item.status)}
-                      </span>
-                    </td>
-
                     {/* ACTION */}
 
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
+                    <td className="px-3 py-4">
+                      <div className="flex justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleViewClass(item)}
@@ -1875,7 +1854,7 @@ function ClassManagement() {
               {/* KHÓA ĐÀO TẠO */}
 
               <FormSelect
-                label="Nhiệm vụ đào tạo"
+                label="Nhiệm vụ khóa đào tạo"
                 required
                 value={formData.training_course_id}
                 onChange={(value) => updateField("training_course_id", value)}
@@ -2081,7 +2060,7 @@ function ClassManagement() {
                     <div className="min-h-[240px] bg-slate-100">
                       {selectedClass.thumbnail ? (
                         <img
-                          src={`http://localhost:5000${selectedClass.thumbnail}`}
+                          src={`http://localhost:5001${selectedClass.thumbnail}`}
                           alt={selectedClass.class_name}
                           className="h-full w-full object-cover"
                         />
@@ -2107,22 +2086,11 @@ function ClassManagement() {
                           </p>
                         </div>
 
-                        <span
-                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClass(
-                            selectedClass.effective_status ||
-                              selectedClass.status,
-                          )}`}
-                        >
-                          {getStatusLabel(
-                            selectedClass.effective_status ||
-                              selectedClass.status,
-                          )}
-                        </span>
                       </div>
 
                       <div className="mt-6 grid gap-4 sm:grid-cols-2">
                         <DetailItem
-                          label="Nhiệm vụ đào tạo"
+                          label="Nhiệm vụ khóa đào tạo"
                           value={selectedClass.training_course_name}
                         />
 
@@ -2369,6 +2337,18 @@ function ClassManagement() {
                                 className="inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-700 hover:bg-violet-50"
                               >
                                 Cập nhật tiến độ
+                              </button>
+
+                              {/* TẠO LINK KHẢO SÁT */}
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSurvey(opening)}
+                                className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-sky-200 px-3 text-sm font-semibold text-sky-700 hover:bg-sky-50"
+                                title="Tạo link khảo sát sau khóa học"
+                              >
+                                <Link2 size={16} />
+                                Tạo link
                               </button>
                               {/* XEM HỌC VIÊN */}
 
@@ -2714,7 +2694,7 @@ function ClassManagement() {
                         </h3>
 
                         <p className="mt-1 text-sm text-slate-500">
-                          Toàn bộ nhiệm vụ đào tạo, khóa đào tạo và đợt học viên đã đăng ký.
+                          Toàn bộ nhiệm vụ khóa đào tạo, khóa đào tạo và đợt tổ chức học viên đã đăng ký.
                         </p>
                       </div>
 
@@ -2728,17 +2708,13 @@ function ClassManagement() {
                         <table className="w-full min-w-[1000px]">
                           <thead className="bg-slate-50">
                             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              <th className="px-5 py-4">Nhiệm vụ đào tạo</th>
+                              <th className="px-5 py-4">Nhiệm vụ khóa đào tạo</th>
 
                               <th className="px-5 py-4">Khóa đào tạo</th>
 
                               <th className="px-5 py-4">Đợt tổ chức</th>
 
-                              <th className="px-5 py-4">Trạng thái</th>
-
                               <th className="px-5 py-4">Check-in</th>
-
-                              <th className="px-5 py-4">Ngày đăng ký</th>
                             </tr>
                           </thead>
 
@@ -2746,7 +2722,7 @@ function ClassManagement() {
                             {studentRegistrations.length === 0 ? (
                               <tr>
                                 <td
-                                  colSpan={6}
+                                  colSpan={4}
                                   className="px-5 py-14 text-center text-slate-500"
                                 >
                                   Học viên chưa có lịch sử đăng ký.
@@ -2778,19 +2754,6 @@ function ClassManagement() {
                                         "—"}
                                     </td>
 
-                                    {/* STATUS */}
-                                    <td className="px-5 py-4">
-                                      <span
-                                        className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getRegistrationStatusClass(
-                                          registration.register_status,
-                                        )}`}
-                                      >
-                                        {getRegistrationStatusLabel(
-                                          registration.register_status,
-                                        )}
-                                      </span>
-                                    </td>
-
                                     {/* CHECK IN */}
                                     <td className="px-5 py-4">
                                       <span
@@ -2810,10 +2773,6 @@ function ClassManagement() {
                                       </span>
                                     </td>
 
-                                    {/* CREATED */}
-                                    <td className="px-5 py-4 text-slate-600">
-                                      {formatDateTime(registration.created_at)}
-                                    </td>
                                   </tr>
                                 ),
                               )
