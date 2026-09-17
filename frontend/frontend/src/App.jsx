@@ -4,6 +4,7 @@ import AdminLayout from "./layouts/AdminLayout";
 import UserLayout from "./layouts/UserLayout";
 
 import Login from "./pages/login/Login";
+import CourseSurvey from "./pages/survey/CourseSurvey";
 
 // ADMIN
 
@@ -13,6 +14,7 @@ import Courses from "./pages/courses/Courses";
 import RegistrationsManagement from "./admin/RegisterManagement";
 import AdminImportStudents from "./admin/AdminImportStudents";
 import ClassManagement from "./admin/ClassManagement";
+import CourseSurveyManagement from "./admin/CourseSurveyManagement";
 import ClassAttendance from "./admin/attendance/ClassAttendance";
 import Programs from "./admin/Programs";
 import AdminImportClassStudent from "./admin/AdminImportClassStudents";
@@ -58,6 +60,11 @@ LOGIN
 ===================== */}
 
         <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/khao-sat/:classId/:token"
+          element={<CourseSurvey />}
+        />
 
         {/* =====================
 USER WEBSITE
@@ -130,6 +137,10 @@ ADMIN
             <Route path="import-students" element={<AdminImportStudents />} />
 
             <Route path="classes" element={<ClassManagement />} />
+            <Route
+              path="course-surveys"
+              element={<CourseSurveyManagement />}
+            />
             <Route
               path="classes/openings/:classId/attendance"
               element={<ClassAttendance />}

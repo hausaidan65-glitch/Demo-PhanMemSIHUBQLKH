@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { createSurveyToken } = require("../utils/surveyToken");
 
 function withCanonicalMission(row) {
   const {
@@ -23,6 +24,43 @@ function withCanonicalMission(row) {
   return course;
 }
 
+function buildOpeningPeriodFilter(query = {}, alias = "cc") {
+  const conditions = [];
+  const params = [];
+  const year = Number(query.year);
+
+  if (Number.isInteger(year) && year >= 2000 && year <= 2100 && query.month) {
+    const month = Number(query.month);
+    const hasMonth = Number.isInteger(month) && month >= 1 && month <= 12;
+    const periodStart = hasMonth
+      ? `${year}-${String(month).padStart(2, "0")}-01`
+      : `${year}-01-01`;
+    const periodEnd = hasMonth
+      ? month === 12
+        ? `${year + 1}-01-01`
+        : `${year}-${String(month + 1).padStart(2, "0")}-01`
+      : `${year + 1}-01-01`;
+
+    conditions.push(`
+      COALESCE(
+        ${alias}.organization_start_date,
+        (SELECT MIN(ccs_start.session_date)
+         FROM course_class_sessions ccs_start
+         WHERE ccs_start.class_id = ${alias}.id)
+      ) < ?
+      AND COALESCE(
+        ${alias}.organization_end_date,
+        (SELECT MAX(ccs_end.session_date)
+         FROM course_class_sessions ccs_end
+         WHERE ccs_end.class_id = ${alias}.id)
+      ) >= ?
+    `);
+    params.push(periodEnd, periodStart);
+  }
+
+  return { conditions, params };
+}
+
 class TrainingClassModel {
   // =========================================================
   // DANH SÁCH LỚP HỌC
@@ -31,6 +69,7 @@ class TrainingClassModel {
     const conditions = [];
     conditions.push("c.deleted_at IS NULL");
     const params = [];
+    const openingPeriodFilter = buildOpeningPeriodFilter(query, "cc");
 
     // =========================================================
     // LỌC THEO KHÓA ĐÀO TẠO
@@ -47,59 +86,12 @@ class TrainingClassModel {
       conditions.push("c.status = ?");
       params.push(String(query.status).toUpperCase());
     }
-    // =========================================================
-    // LỌC THEO NĂM CỦA THỜI GIAN TỔ CHỨC
-    //
-    // Ưu tiên:
-    // 1. Lịch buổi học (course_class_sessions)
-    // 2. organization_start_date / organization_end_date
-    //
-    // Dùng nguyên tắc overlap:
-    // lớp chỉ cần giao với khoảng báo cáo là được tính.
-    // =========================================================
     if (query.year) {
       const year = Number(query.year);
 
       if (Number.isInteger(year) && year >= 2000 && year <= 2100) {
-        const reportStart = `${year}-01-01`;
-
-        const reportEnd = `${year}-12-31`;
-
-        conditions.push(`
-      EXISTS (
-        SELECT 1
-
-        FROM course_classes cc_year
-
-        LEFT JOIN (
-          SELECT
-            class_id,
-            MIN(session_date) AS first_session_date,
-            MAX(session_date) AS last_session_date
-
-          FROM course_class_sessions
-
-          GROUP BY class_id
-        ) session_period
-          ON session_period.class_id =
-             cc_year.id
-
-        WHERE cc_year.course_id = c.id
-          AND cc_year.deleted_at IS NULL
-
-          AND COALESCE(
-  cc_year.organization_start_date,
-  session_period.first_session_date
-) <= ?
-
-          AND COALESCE(
-  cc_year.organization_end_date,
-  session_period.last_session_date
-) >= ?
-      )
-    `);
-
-        params.push(reportEnd, reportStart);
+        conditions.push("tp.year = ?");
+        params.push(year);
       }
     }
 
@@ -251,6 +243,9 @@ c.status,
 LEFT JOIN course_classes cc
   ON cc.course_id = c.id
  AND cc.deleted_at IS NULL
+ ${openingPeriodFilter.conditions.length > 0
+    ? `AND ${openingPeriodFilter.conditions.join(" AND ")}`
+    : ""}
 
       ${whereSql}
 
@@ -277,7 +272,7 @@ c.status,
 
       ORDER BY c.id DESC
     `,
-      params,
+      [...openingPeriodFilter.params, ...params],
     );
 
     return rows.map((item) => ({
@@ -294,7 +289,7 @@ c.status,
       total_students: Number(item.total_students) || 0,
     }));
   }
-  static async countUniqueConfirmedStudents(courseIds = []) {
+  static async countUniqueConfirmedStudents(courseIds = [], query = {}) {
     const normalizedCourseIds = courseIds
       .map((id) => Number(id))
       .filter((id) => Number.isInteger(id) && id > 0);
@@ -304,6 +299,7 @@ c.status,
     }
 
     const placeholders = normalizedCourseIds.map(() => "?").join(", ");
+    const openingPeriodFilter = buildOpeningPeriodFilter(query, "cc");
     const [rows] = await db.query(
       `
         SELECT COUNT(DISTINCT r.user_id) AS total
@@ -319,10 +315,13 @@ c.status,
          AND c.deleted_at IS NULL
 
         WHERE c.id IN (${placeholders})
-          AND r.register_status = 'CONFIRMED'
+          ${openingPeriodFilter.conditions.length > 0
+    ? `AND ${openingPeriodFilter.conditions.join(" AND ")}`
+    : ""}
+          AND r.register_status IN ('PENDING', 'CONFIRMED')
           AND r.user_id IS NOT NULL
       `,
-      normalizedCourseIds,
+      [...normalizedCourseIds, ...openingPeriodFilter.params],
     );
 
     return Number(rows[0]?.total) || 0;
@@ -1549,6 +1548,7 @@ WHERE cc.course_id = ?
       max_students: Number(item.max_students) || 0,
       current_students: Number(item.current_students) || 0,
       total_registrations: Number(item.total_registrations) || 0,
+      survey_token: createSurveyToken(item.id, item.class_code),
     }));
   }
   // =========================================================

@@ -44,7 +44,8 @@ export default function Sidebar({ open, onClose }) {
   const isTrainingActive =
     location.pathname === "/admin/courses" ||
     location.pathname.startsWith("/admin/classes") ||
-    location.pathname.startsWith("/admin/registrations");
+    location.pathname.startsWith("/admin/registrations") ||
+    location.pathname.startsWith("/admin/course-surveys");
 
   const [trainingOpen, setTrainingOpen] = useState(isTrainingActive);
   let admin = null;
@@ -499,6 +500,63 @@ export default function Sidebar({ open, onClose }) {
                       />
 
                       <span>Danh sách quản lý học viên</span>
+                    </>
+                  )}
+                </NavLink>
+
+                {/* ==============================
+          KHẢO SÁT SAU KHÓA HỌC
+      ============================== */}
+
+                <NavLink
+                  to="/admin/course-surveys"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    `
+            group
+            relative
+            flex
+            min-h-10
+            items-center
+            gap-3
+            rounded-lg
+            px-3
+            py-2
+            text-sm
+            font-medium
+            transition-all
+
+            ${
+              isActive
+                ? "bg-green-600 text-white"
+                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            }
+          `
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className="
+                absolute
+                -left-4
+                top-1/2
+                h-px
+                w-4
+                bg-slate-700
+              "
+                      />
+
+                      <ClipboardList
+                        size={17}
+                        className={
+                          isActive
+                            ? "text-white"
+                            : "text-slate-500 group-hover:text-green-400"
+                        }
+                      />
+
+                      <span>Khảo sát sau khóa học</span>
                     </>
                   )}
                 </NavLink>
