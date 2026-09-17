@@ -9,7 +9,7 @@ import CourseSurvey from "./pages/survey/CourseSurvey";
 // ADMIN
 
 import ProtectedAdminRoute from "./router/ProtectedAdminRoute";
-import DashboardModules from "./pages/dashboard/DashboardModules";
+import Dashboard from "./pages/dashboard/Dashboard";
 import Courses from "./pages/courses/Courses";
 import RegistrationsManagement from "./admin/RegisterManagement";
 import AdminImportStudents from "./admin/AdminImportStudents";
@@ -124,7 +124,7 @@ ADMIN
 
         <Route element={<ProtectedAdminRoute />}>
           <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<DashboardModules />} />
+            <Route index element={<Dashboard />} />
 
             <Route path="programs" element={<Programs />} />
 

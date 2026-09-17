@@ -21,9 +21,9 @@ import {
   FileSpreadsheet,
   X,
 } from "lucide-react";
-import { PUBLIC_APP_URL } from "../config/api";
+import { PUBLIC_APP_URL, SERVER_URL } from "../config/api";
 
-const API_URL = "http://localhost:5001/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const PUBLIC_REGISTRATION_BASE_URL = PUBLIC_APP_URL.replace(/\/$/, "");
 const MISSION_SOURCE_LABELS = {
   A: "Nhiệm vụ của Sở Khoa học và Công nghệ",
@@ -1651,7 +1651,7 @@ function ClassManagement() {
                         <div className="h-14 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                           {item.thumbnail ? (
                             <img
-                              src={`http://localhost:5001${item.thumbnail}`}
+                              src={`${SERVER_URL}${item.thumbnail}`}
                               alt={item.class_name || "Khóa đào tạo"}
                               className="h-full w-full object-cover"
                             />
@@ -2060,7 +2060,7 @@ function ClassManagement() {
                     <div className="min-h-[240px] bg-slate-100">
                       {selectedClass.thumbnail ? (
                         <img
-                          src={`http://localhost:5001${selectedClass.thumbnail}`}
+                          src={`${SERVER_URL}${selectedClass.thumbnail}`}
                           alt={selectedClass.class_name}
                           className="h-full w-full object-cover"
                         />
